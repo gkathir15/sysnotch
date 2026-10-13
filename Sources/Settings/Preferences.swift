@@ -1045,10 +1045,10 @@ final class Preferences: ObservableObject {
         menuBarProviders = menuBarLimits.choosing(shown, providerID, among: listed).chosen
     }
 
-    /// Claude and Codex stay on for a first install and for a newly discovered
-    /// profile. Everyone else starts off.
+    /// System providers, Claude, and Codex stay on by default.
     nonisolated static func isDefaultOnFamily(_ providerID: String) -> Bool {
-        ClaudeProfile.isClaude(providerID: providerID)
+        providerID.hasPrefix("system-")
+            || ClaudeProfile.isClaude(providerID: providerID)
             || CodexProfile.isCodex(providerID: providerID)
     }
 
@@ -1092,8 +1092,8 @@ final class Preferences: ObservableObject {
             return
         }
         if defaults.object(forKey: Keys.connected) == nil {
-            // First install: persist Claude and Codex as on, then apply this toggle.
-            connectedProviders = ["claude", "codex"]
+            // First install: persist system metrics as on.
+            connectedProviders = ["system-ram", "system-cpu", "system-thermals", "system-network", "system-energy"]
         }
         if connected {
             connectedProviders.insert(providerID)

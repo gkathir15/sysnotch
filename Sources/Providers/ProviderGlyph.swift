@@ -44,6 +44,24 @@ enum ProviderGlyph: String, Codable, Equatable {
     case qoder
     case qianwenAI = "qianwenai"
 
+    // System Activity Monitor glyphs
+    case ram = "system-ram"
+    case cpu = "system-cpu"
+    case thermals = "system-thermals"
+    case network = "system-network"
+    case energy = "system-energy"
+
+    var systemSymbolName: String? {
+        switch self {
+        case .ram: return "memorychip"
+        case .cpu: return "cpu"
+        case .thermals: return "thermometer.medium"
+        case .network: return "network"
+        case .energy: return "bolt.fill"
+        default: return nil
+        }
+    }
+
     /// If an asset with this name is in the bundle it wins over the traced
     /// outline — drop a PDF/SVG export from Figma in and it is picked up.
     var assetName: String { self == .ollamaLocal ? "glyph-ollama" : "glyph-\(rawValue)" }
@@ -89,11 +107,13 @@ enum ProviderGlyph: String, Codable, Equatable {
         // with `rsvg-convert -w 512`. Claude's outline fills 0.997 at 0.97, so
         // the same scale brings this ink to the same extent.
         case .qianwenAI, .qoder: return 0.97
-        case .devin, .qwen, .gemma, .meta, .deepseek, .mistral: return 1.0
+        case .devin, .qwen, .gemma, .meta, .deepseek, .mistral,
+             .ram, .cpu, .thermals, .network, .energy: return 1.0
         }
     }
 
     var outline: [[CGPoint]] {
+        if systemSymbolName != nil { return [] }
         switch self {
         case .claude: return GlyphOutline.claude
         case .openai: return GlyphOutline.openai
@@ -151,6 +171,11 @@ struct ProviderGlyphView: View {
             if let customIconFilename,
                let image = CustomIconStore.loadIcon(filename: customIconFilename) {
                 Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else if let systemSymbol = glyph.systemSymbolName {
+                Image(systemName: systemSymbol)
+                    .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
             } else if let image = NSImage(named: glyph.assetName) {

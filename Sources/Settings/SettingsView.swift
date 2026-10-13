@@ -26,70 +26,48 @@ extension View {
 /// crossing-and-notification machinery it switches is Notifications' to
 /// explain.
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case accounts, phone, deepseek, ollama, lmstudio, customEndpoints, appearance, notifications, costs, general
+    case accounts, phone, appearance, notifications, general
 
     /// The sections the sidebar lists; Phone only once pairing is offered.
     static var visible: [SettingsSection] {
         allCases.filter { $0 != .phone || PhoneLink.isAvailable }
     }
 
-    /// Providers with a pane of their own. They are accounts too, so the
-    /// sidebar nests them under Accounts rather than listing them beside
-    /// Appearance and General, where they read as app-wide settings.
-    static let providerPanes: [SettingsSection] = [.deepseek, .ollama, .lmstudio, .customEndpoints]
+    static let providerPanes: [SettingsSection] = []
 
     /// The sidebar's own rows: everything visible that is not nested.
     static var topLevel: [SettingsSection] {
-        visible.filter { !providerPanes.contains($0) }
+        visible
     }
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .accounts:      return L10n.t("Accounts")
+        case .accounts:      return L10n.t("System Metrics")
         case .phone:         return L10n.t("Phone")
-        case .deepseek:      return "DeepSeek"
-        case .ollama:        return "Ollama"   // a product name, the same in every language
-        case .lmstudio:      return "LM Studio"
-        case .customEndpoints: return L10n.t("Custom Endpoints")
         case .appearance:    return L10n.t("Appearance")
         case .notifications: return L10n.t("Notifications")
-        case .costs:         return L10n.t("Costs")
         case .general:       return L10n.t("General")
         }
     }
 
-    /// The provider's own logo, for the sections that are one provider's
-    /// settings; nil for the app's own sections, which use a symbol.
-    var logo: ProviderGlyph? {
-        switch self {
-        case .deepseek: return .deepseek
-        case .ollama:   return .ollama
-        case .lmstudio: return .lmstudio
-        default:        return nil
-        }
-    }
+    var logo: ProviderGlyph? { nil }
 
     /// The line under the pane's title.
     var subtitle: String {
         switch self {
-        case .accounts:      return L10n.t("Choose which providers the notch reads.")
-        case .phone:         return L10n.t("See your usage on your phone.")
-        case .deepseek:      return L10n.t("Peak and off-peak pricing for your DeepSeek spend.")
-        case .ollama:        return L10n.t("Models running in Ollama on this Mac.")
-        case .lmstudio:      return L10n.t("Models loaded in LM Studio on this Mac.")
-        case .customEndpoints: return L10n.t("OpenAI-compatible APIs, local runtimes and custom proxies.")
+        case .accounts:      return L10n.t("Choose which system metrics the notch displays.")
+        case .phone:         return L10n.t("See your system metrics on your phone.")
         case .appearance:    return L10n.t("How the notch looks and where it sits.")
         case .notifications: return L10n.t("What Codenotch tells you, and when.")
-        case .costs:         return L10n.t("What each project spent of each login's allowance.")
         case .general:       return L10n.t("Startup, updates and everything else.")
         }
     }
 
     var icon: String {
         switch self {
-        case .accounts:      return "person.crop.circle.fill"
+        case .accounts:      return "gauge.with.dots.needle.bottom.50percent"
         case .phone:         return "iphone"
         case .deepseek:      return "chart.line.uptrend.xyaxis"
         case .ollama:        return "desktopcomputer"
@@ -109,13 +87,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .accounts:      return .blue
         case .phone:         return .green
-        case .deepseek:      return .orange
-        case .ollama:        return .teal
-        case .lmstudio:      return .purple
-        case .customEndpoints: return .indigo
         case .appearance:    return .indigo
         case .notifications: return .red
-        case .costs:         return .mint
         case .general:       return .gray
         }
     }
@@ -707,28 +680,6 @@ struct SettingsView: View {
         switch section {
         case .accounts:      accountsPane
         case .phone:         phonePane
-        case .costs:         CostSettingsPane()
-        case .deepseek:      DeepSeekPricingSettingsView(preferences: preferences)
-        case .ollama:
-            if let usageStore {
-                Form {
-                    Section(L10n.t("Connection")) {
-                        OllamaSettingsRow(preferences: preferences, store: usageStore, relay: ollamaRelay)
-                    }
-                }
-                .formStyle(.grouped)
-            }
-        case .lmstudio:
-            if let usageStore {
-                Form {
-                    Section("Connection") {
-                        LMStudioSettingsRow(preferences: preferences, store: usageStore, metrics: lmstudioMetrics)
-                    }
-                }
-                .formStyle(.grouped)
-            }
-        case .customEndpoints:
-            CustomEndpointsSettingsView(preferences: preferences)
         case .appearance:    appearancePane
         case .notifications: notificationsPane
         case .general:       generalPane
@@ -1510,16 +1461,11 @@ struct SettingsView: View {
     /// this, sees four blank rings and concludes it is broken — and the
     /// distinction that catches them out is Claude *Code*, not the Claude app.
     static var setupCopy: String {
-        L10n.t("Codenotch reads usage from tools already signed in on this Mac — it never asks for your password. Install and sign in to any of Claude Code (the terminal tool, not the Claude app), Cursor (the editor or cursor-agent), Codex, Antigravity, GLM, Grok, OpenCode, Command Code, GitHub Copilot, Kimi Code, Kiro, Amp, Apify, the Kilo CLI or a Gemini API key (via Gemini CLI, OpenCode or Hermes), and its ring appears in the notch.")
+        L10n.t("Codenotch monitors system activity in real-time — System RAM, CPU Load, Thermal Pressure, Network Speed, and Energy / Battery State.")
     }
 
-    /// Said before it happens rather than after. A system dialogue asking to
-    /// read a *credential*, from an app installed a minute ago, looks alarming
-    /// unless it was expected — and choosing Allow instead of Always Allow made
-    /// it return on every read, which is what "it asks every time" turns out to
-    /// be.
     static var keychainCopy: String {
-        L10n.t("macOS may ask before Codenotch reads Claude Code's, Antigravity's or cursor-agent's saved login. Background refreshes never show that question; it appears only when you click Allow access…, and Deny stops Codenotch reading that login until you ask again.")
+        L10n.t("All metrics are queried directly from system APIs without needing elevated privileges.")
     }
 
     /// A provider has just been switched on: put it after the ones already
