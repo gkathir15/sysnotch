@@ -4,23 +4,23 @@ import IOKit.ps
 import SystemConfiguration
 
 // MARK: - RAM Provider
-actor RAMProvider: UsageProvider {
-    nonisolated let id = "system-ram"
-    nonisolated let displayName = "RAM"
-    nonisolated let glyph = ProviderGlyph.ram
-    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+public actor RAMProvider: UsageProvider {
+    public let id = "system-ram"
+    public let displayName = "RAM"
+    public let glyph = ProviderGlyph.ram
+    public let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
 
-    init() {}
+    public init() {}
 
-    nonisolated func account() -> ProviderAccount? {
+    public func account() -> ProviderAccount? {
         let totalGB = String(format: "%.0f GB", Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0)
-        return ProviderAccount(label: "System Memory (\(totalGB))", plan: nil, source: "macOS", manageURL: nil)
+        return ProviderAccount(id: id, displayName: "System Memory (\(totalGB))", manageURL: nil)
     }
 
-    func signOut() async {}
-    nonisolated func forgetCachedCredential() {}
+    public func signOut() async {}
+    public func forgetCachedCredential() {}
 
-    func fetchSnapshot() async throws -> ProviderSnapshot {
+    public func fetchSnapshot() async throws -> ProviderSnapshot {
         var vmStats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
         let hostPort = mach_host_self()
@@ -95,25 +95,25 @@ actor RAMProvider: UsageProvider {
 }
 
 // MARK: - CPU Provider
-actor CPUProvider: UsageProvider {
-    nonisolated let id = "system-cpu"
-    nonisolated let displayName = "CPU"
-    nonisolated let glyph = ProviderGlyph.cpu
-    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+public actor CPUProvider: UsageProvider {
+    public let id = "system-cpu"
+    public let displayName = "CPU"
+    public let glyph = ProviderGlyph.cpu
+    public let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
 
     private var previousInfo: host_cpu_load_info?
 
-    init() {}
+    public init() {}
 
-    nonisolated func account() -> ProviderAccount? {
+    public func account() -> ProviderAccount? {
         let coreCount = ProcessInfo.processInfo.activeProcessorCount
-        return ProviderAccount(label: "\(coreCount) Cores", plan: nil, source: "macOS", manageURL: nil)
+        return ProviderAccount(id: id, displayName: "\(coreCount) Cores", manageURL: nil)
     }
 
-    func signOut() async {}
-    nonisolated func forgetCachedCredential() {}
+    public func signOut() async {}
+    public func forgetCachedCredential() {}
 
-    func fetchSnapshot() async throws -> ProviderSnapshot {
+    public func fetchSnapshot() async throws -> ProviderSnapshot {
         var cpuInfo = host_cpu_load_info()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &cpuInfo) {
@@ -183,22 +183,22 @@ actor CPUProvider: UsageProvider {
 }
 
 // MARK: - Thermals Provider
-actor ThermalsProvider: UsageProvider {
-    nonisolated let id = "system-thermals"
-    nonisolated let displayName = "Thermals"
-    nonisolated let glyph = ProviderGlyph.thermals
-    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+public actor ThermalsProvider: UsageProvider {
+    public let id = "system-thermals"
+    public let displayName = "Thermals"
+    public let glyph = ProviderGlyph.thermals
+    public let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
 
-    init() {}
+    public init() {}
 
-    nonisolated func account() -> ProviderAccount? {
-        return ProviderAccount(label: "Thermal State", plan: nil, source: "macOS", manageURL: nil)
+    public func account() -> ProviderAccount? {
+        return ProviderAccount(id: id, displayName: "Thermal State", manageURL: nil)
     }
 
-    func signOut() async {}
-    nonisolated func forgetCachedCredential() {}
+    public func signOut() async {}
+    public func forgetCachedCredential() {}
 
-    func fetchSnapshot() async throws -> ProviderSnapshot {
+    public func fetchSnapshot() async throws -> ProviderSnapshot {
         let thermalState = ProcessInfo.processInfo.thermalState
         let fraction: Double
         let labelText: String
@@ -242,26 +242,26 @@ actor ThermalsProvider: UsageProvider {
 }
 
 // MARK: - Network Provider
-actor NetworkProvider: UsageProvider {
-    nonisolated let id = "system-network"
-    nonisolated let displayName = "Network"
-    nonisolated let glyph = ProviderGlyph.network
-    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+public actor NetworkProvider: UsageProvider {
+    public let id = "system-network"
+    public let displayName = "Network"
+    public let glyph = ProviderGlyph.network
+    public let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
 
     private var lastBytesIn: UInt64 = 0
     private var lastBytesOut: UInt64 = 0
     private var lastTime: Date?
 
-    init() {}
+    public init() {}
 
-    nonisolated func account() -> ProviderAccount? {
-        return ProviderAccount(label: "Network Activity", plan: nil, source: "macOS", manageURL: nil)
+    public func account() -> ProviderAccount? {
+        return ProviderAccount(id: id, displayName: "Network Activity", manageURL: nil)
     }
 
-    func signOut() async {}
-    nonisolated func forgetCachedCredential() {}
+    public func signOut() async {}
+    public func forgetCachedCredential() {}
 
-    func fetchSnapshot() async throws -> ProviderSnapshot {
+    public func fetchSnapshot() async throws -> ProviderSnapshot {
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else {
             throw UsageProviderError.badResponse(status: 0)
@@ -360,22 +360,22 @@ private extension UnsafeMutableRawPointer {
 }
 
 // MARK: - Energy Provider
-actor EnergyProvider: UsageProvider {
-    nonisolated let id = "system-energy"
-    nonisolated let displayName = "Energy"
-    nonisolated let glyph = ProviderGlyph.energy
-    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+public actor EnergyProvider: UsageProvider {
+    public let id = "system-energy"
+    public let displayName = "Energy"
+    public let glyph = ProviderGlyph.energy
+    public let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
 
-    init() {}
+    public init() {}
 
-    nonisolated func account() -> ProviderAccount? {
-        return ProviderAccount(label: "Power & Energy", plan: nil, source: "macOS", manageURL: nil)
+    public func account() -> ProviderAccount? {
+        return ProviderAccount(id: id, displayName: "Power & Energy", manageURL: nil)
     }
 
-    func signOut() async {}
-    nonisolated func forgetCachedCredential() {}
+    public func signOut() async {}
+    public func forgetCachedCredential() {}
 
-    func fetchSnapshot() async throws -> ProviderSnapshot {
+    public func fetchSnapshot() async throws -> ProviderSnapshot {
         var batteryLevel: Double = 1.0
         var isCharging = false
         var powerSource = L10n.t("AC Power")
@@ -387,8 +387,8 @@ actor EnergyProvider: UsageProvider {
                 if let description = IOPSGetPowerSourceDescription(snapshot, source)?.takeUnretainedValue() as? [String: Any] {
                     hasBattery = true
                     if let current = description[kIOPSCurrentCapacityKey] as? Int,
-                       let maxCapacity = description[kIOPSMaxCapacityKey] as? Int, maxCapacity > 0 {
-                        batteryLevel = min(max(Double(current) / Double(maxCapacity), 0), 1)
+                       let max = description[kIOPSMaxCapacityKey] as? Int, max > 0 {
+                        batteryLevel = min(max(Double(current) / Double(max), 0), 1)
                     }
                     if let state = description[kIOPSPowerSourceStateKey] as? String {
                         if state == kIOPSACPowerValue {

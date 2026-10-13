@@ -449,6 +449,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .sink { [weak fleet] in fleet?.apply(deepSeekPricingSchedule: $0) }
                 .store(in: &cancellables)
 
+            preferences.$qoderRegion
+                .dropFirst()
+                .removeDuplicates()
+                .receive(on: RunLoop.main)
+                .sink { [weak qoder, weak store] region in
+                    guard let qoder else { return }
+                    store?.providerContextChanged(providerID: "qoder") {
+                        qoder.apply(site: Sites.qoder(region: region))
+                    }
+                }
+                .store(in: &cancellables)
+
             preferences.$minimaxRegion
                 .dropFirst()
                 .removeDuplicates()
@@ -703,6 +715,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .sink { [weak fleet] ids in fleet?.setRefreshing(ids) }
                 .store(in: &cancellables)
 
+            // CODENOTCH_DISCOVER=<url> loads that page in the signed-in WebView
+            // and logs the API calls it makes — for finding an undocumented
+            // endpoint by watching the site rather than guessing at path names.
+            if let target = ProcessInfo.processInfo.environment["CODENOTCH_DISCOVER"],
+               let url = URL(string: target),
+               let provider = webProviders.first(where: { url.host?.contains($0.id) == true })
+                   ?? webProviders.first {
+                Task {
+                    let calls = await provider.recordCalls(on: url)
+                    Log.usage.notice("discovered: \(calls.joined(separator: "  "), privacy: .public)")
+                }
+            }
             self.store = store
         }
 
