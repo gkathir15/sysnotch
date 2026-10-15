@@ -26,70 +26,48 @@ extension View {
 /// crossing-and-notification machinery it switches is Notifications' to
 /// explain.
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case accounts, phone, deepseek, ollama, lmstudio, customEndpoints, appearance, notifications, costs, general
+    case accounts, phone, appearance, notifications, general
 
     /// The sections the sidebar lists; Phone only once pairing is offered.
     static var visible: [SettingsSection] {
         allCases.filter { $0 != .phone || PhoneLink.isAvailable }
     }
 
-    /// Providers with a pane of their own. They are accounts too, so the
-    /// sidebar nests them under Accounts rather than listing them beside
-    /// Appearance and General, where they read as app-wide settings.
-    static let providerPanes: [SettingsSection] = [.deepseek, .ollama, .lmstudio, .customEndpoints]
+    static let providerPanes: [SettingsSection] = []
 
     /// The sidebar's own rows: everything visible that is not nested.
     static var topLevel: [SettingsSection] {
-        visible.filter { !providerPanes.contains($0) }
+        visible
     }
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .accounts:      return L10n.t("Accounts")
+        case .accounts:      return L10n.t("System Metrics")
         case .phone:         return L10n.t("Phone")
-        case .deepseek:      return "DeepSeek"
-        case .ollama:        return "Ollama"   // a product name, the same in every language
-        case .lmstudio:      return "LM Studio"
-        case .customEndpoints: return L10n.t("Custom Endpoints")
         case .appearance:    return L10n.t("Appearance")
         case .notifications: return L10n.t("Notifications")
-        case .costs:         return L10n.t("Costs")
         case .general:       return L10n.t("General")
         }
     }
 
-    /// The provider's own logo, for the sections that are one provider's
-    /// settings; nil for the app's own sections, which use a symbol.
-    var logo: ProviderGlyph? {
-        switch self {
-        case .deepseek: return .deepseek
-        case .ollama:   return .ollama
-        case .lmstudio: return .lmstudio
-        default:        return nil
-        }
-    }
+    var logo: ProviderGlyph? { nil }
 
     /// The line under the pane's title.
     var subtitle: String {
         switch self {
-        case .accounts:      return L10n.t("Choose which providers the notch reads.")
-        case .phone:         return L10n.t("See your usage on your phone.")
-        case .deepseek:      return L10n.t("Peak and off-peak pricing for your DeepSeek spend.")
-        case .ollama:        return L10n.t("Models running in Ollama on this Mac.")
-        case .lmstudio:      return L10n.t("Models loaded in LM Studio on this Mac.")
-        case .customEndpoints: return L10n.t("OpenAI-compatible APIs, local runtimes and custom proxies.")
+        case .accounts:      return L10n.t("Choose which system metrics the notch displays.")
+        case .phone:         return L10n.t("See your system metrics on your phone.")
         case .appearance:    return L10n.t("How the notch looks and where it sits.")
         case .notifications: return L10n.t("What Codenotch tells you, and when.")
-        case .costs:         return L10n.t("What each project spent of each login's allowance.")
         case .general:       return L10n.t("Startup, updates and everything else.")
         }
     }
 
     var icon: String {
         switch self {
-        case .accounts:      return "person.crop.circle.fill"
+        case .accounts:      return "gauge.with.dots.needle.bottom.50percent"
         case .phone:         return "iphone"
         case .deepseek:      return "chart.line.uptrend.xyaxis"
         case .ollama:        return "desktopcomputer"
@@ -109,13 +87,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .accounts:      return .blue
         case .phone:         return .green
-        case .deepseek:      return .orange
-        case .ollama:        return .teal
-        case .lmstudio:      return .purple
-        case .customEndpoints: return .indigo
         case .appearance:    return .indigo
         case .notifications: return .red
-        case .costs:         return .mint
         case .general:       return .gray
         }
     }
@@ -707,28 +680,6 @@ struct SettingsView: View {
         switch section {
         case .accounts:      accountsPane
         case .phone:         phonePane
-        case .costs:         CostSettingsPane()
-        case .deepseek:      DeepSeekPricingSettingsView(preferences: preferences)
-        case .ollama:
-            if let usageStore {
-                Form {
-                    Section(L10n.t("Connection")) {
-                        OllamaSettingsRow(preferences: preferences, store: usageStore, relay: ollamaRelay)
-                    }
-                }
-                .formStyle(.grouped)
-            }
-        case .lmstudio:
-            if let usageStore {
-                Form {
-                    Section("Connection") {
-                        LMStudioSettingsRow(preferences: preferences, store: usageStore, metrics: lmstudioMetrics)
-                    }
-                }
-                .formStyle(.grouped)
-            }
-        case .customEndpoints:
-            CustomEndpointsSettingsView(preferences: preferences)
         case .appearance:    appearancePane
         case .notifications: notificationsPane
         case .general:       generalPane
@@ -737,10 +688,7 @@ struct SettingsView: View {
 
     private var accountsPane: some View {
         Form {
-            // Split in two, because ordering only means anything for the
-            // first group: a provider switched off has no ring in the notch,
-            // so dragging it was arranging something that is not on screen.
-            Section(L10n.t("Connected")) {
+            Section(L10n.t("Monitored Metrics")) {
                 if needsSetup { setupNote }
                 ForEach(connected) { account in
                     AccountRow(provider: account, preferences: preferences,
@@ -755,28 +703,20 @@ struct SettingsView: View {
                                didConnect: { connect(account.id) })
                 }
                 if connected.isEmpty {
-                    Text(L10n.t("Nothing is connected, so the notch has no rings to draw."))
+                    Text(L10n.t("No system metrics connected."))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if !connected.isEmpty {
-                    Text(L10n.t("The notch draws these in this order. Drag one by its handle to move it."))
+                    Text(L10n.t("The notch displays these metrics in this order. Drag one by its handle to reorder."))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                // Beside the switches it explains, not stranded at the end of
-                // the page.
-                Text(L10n.t("Most readings are borrowed from a tool that already holds the account. DeepSeek and MiniMax are the exceptions: clicking Sign in opens a Codenotch window for that account, and signing out here clears only that session and its saved reading."))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Absent rather than empty when everything is on: a titled, empty
-            // group reads as something having failed to load.
             if !notConnected.isEmpty {
-                Section(L10n.t("Not connected")) {
+                Section(L10n.t("Available Metrics")) {
                     ForEach(notConnected) { account in
                         AccountRow(provider: account, preferences: preferences,
                                    signOut: signOut, signIn: signIn,
@@ -789,88 +729,22 @@ struct SettingsView: View {
                                    takePlaceOf: { _ in false },
                                    didConnect: { connect(account.id) })
                     }
-                    // Says what switching one back on will do, which is the
-                    // only question this group raises.
-                    Text(L10n.t("These have no ring to place. Switch one on and it joins the end of the list above."))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .formStyle(.grouped)
-        // A row switched off jumps from one group to the other. Scoped to that
-        // one value so nothing else on the page inherits an animation.
         .animation(.snappy(duration: 0.25), value: preferences.connectedProviders)
         .animation(.snappy(duration: 0.25), value: preferences.disabledModels)
     }
 
-    // One pane, because they are one question: what Codenotch looks like and
-    // where it turns up. Split across several it read as unrelated settings,
-    // and "Where Codenotch appears" was a header long enough to look like a
-    // warning.
     private var appearancePane: some View {
         Form {
             Section(L10n.t("Notch")) {
-                Picker(L10n.t("Reset time"), selection: $preferences.resetTimeFormat) {
-                    ForEach(ResetTimeFormat.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-
-                Text(preferences.resetTimeFormat.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Toggle(L10n.t("Show usage pace"), isOn: $preferences.showUsagePace)
-                Text(L10n.t("Compares each timed allowance with the time left until reset, showing quota in deficit or held in reserve."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Toggle(L10n.t("Show Spark and code review"), isOn: $preferences.showCodexExtraLimits)
-                    .onChange(of: preferences.showCodexExtraLimits) { _ in
-                        for account in providers() where CodexProfile.isCodex(providerID: account.id) {
-                            usageStore?.refresh(providerID: account.id, freshness: .fromSource)
-                        }
-                    }
-                Text(L10n.t("The ring still follows the main Codex window. Spark and code review stay in the hover card."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Picker(L10n.t("Weekly ring"), selection: $preferences.weeklyRing) {
-                    ForEach(WeeklyRing.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-
-                Text(preferences.weeklyRing.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Toggle(L10n.t("Percentage under each ring"),
                        isOn: $preferences.showsNotchReadings)
                 Text(sizeIsDecidedByTheHardware
                      ? L10n.t("Merged into your Mac's own notch the bar is exactly as deep as the cutout, so a ring and a percentage under it have to share that depth — showing it draws the rings smaller. Turn it off for the largest rings the cutout has room for.")
                      : L10n.t("The figure under each ring. Turn it off for rings alone; the number is still a hover away in the card."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if preferences.weeklyRing != .off {
-                    Toggle(L10n.t("Dashed weekly ring"), isOn: $preferences.weeklyRingDashed)
-                    Toggle(L10n.t("Weekly ring % in the reading"), isOn: $preferences.weeklyReading)
-                }
-
-                Toggle(L10n.t("Weekly limit as the main ring"), isOn: $preferences.weeklyHeadline)
-                Text(L10n.t("For every provider with a weekly limit beside a shorter one, the main ring shows the week. The shorter window moves to the thin ring and the card. Alerts, the menu bar and providers with no weekly limit are unchanged, and Claude's daily pace ring still leads when it is on."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Toggle(L10n.t("Claude daily pace ring"), isOn: $preferences.claudeDailyPaceRing)
-                Text(L10n.t("Claude's main ring shows today's share of the weekly limit — a seventh a day, counted from the weekly reset — instead of the session. The session moves to the thin ring and the card; alerts follow the daily ring."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1386,13 +1260,9 @@ struct SettingsView: View {
             }
 
             Section(L10n.t("Readings")) {
-                Toggle(L10n.t("Ask the provider every time you look"),
+                Toggle(L10n.t("Refresh metrics every time you look"),
                        isOn: $preferences.asksProviderOnLook)
-                Text(L10n.t("Pointing at a ring, or opening the menu bar menu, re-reads the limit from the provider itself rather than from a reading cached moments ago. Off, a look still asks for a live reading and accepts a cached one only while it is newer than a couple of minutes."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(L10n.t("It spends a request every time. A provider that rate-limits answers one request too many by refusing the next few minutes of them, and the figure then ages further than it would have. Worth turning on to check Codenotch against a provider's own dashboard, and worth turning off again after."))
+                Text(L10n.t("Pointing at a ring or opening the menu bar menu re-fetches system metrics immediately rather than using the cached reading."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1510,16 +1380,11 @@ struct SettingsView: View {
     /// this, sees four blank rings and concludes it is broken — and the
     /// distinction that catches them out is Claude *Code*, not the Claude app.
     static var setupCopy: String {
-        L10n.t("Codenotch reads usage from tools already signed in on this Mac — it never asks for your password. Install and sign in to any of Claude Code (the terminal tool, not the Claude app), Cursor (the editor or cursor-agent), Codex, Antigravity, GLM, Grok, OpenCode, Command Code, GitHub Copilot, Kimi Code, Kiro, Amp, Apify, the Kilo CLI or a Gemini API key (via Gemini CLI, OpenCode or Hermes), and its ring appears in the notch.")
+        L10n.t("Codenotch monitors system activity in real-time — System RAM, CPU Load, Thermal Pressure, Network Speed, and Energy / Battery State.")
     }
 
-    /// Said before it happens rather than after. A system dialogue asking to
-    /// read a *credential*, from an app installed a minute ago, looks alarming
-    /// unless it was expected — and choosing Allow instead of Always Allow made
-    /// it return on every read, which is what "it asks every time" turns out to
-    /// be.
     static var keychainCopy: String {
-        L10n.t("macOS may ask before Codenotch reads Claude Code's, Antigravity's or cursor-agent's saved login. Background refreshes never show that question; it appears only when you click Allow access…, and Deny stops Codenotch reading that login until you ask again.")
+        L10n.t("All metrics are queried directly from system APIs without needing elevated privileges.")
     }
 
     /// A provider has just been switched on: put it after the ones already
@@ -2013,104 +1878,6 @@ private struct AccountRow: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 6) {
             accountDetail
-            
-            // Antigravity limit dropdown
-            if isConnected, provider.id == AntigravityProfile.defaultID {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Text(L10n.t("Notch reads"))
-                            .foregroundStyle(.secondary)
-                        Picker(L10n.t("Notch reads"), selection: $preferences.antigravityHeadlineLimit) {
-                            ForEach(AntigravityHeadlineLimit.allCases) { limit in
-                                Text(limit.title).tag(limit)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 140)
-                    }
-                    
-                    HStack(spacing: 8) {
-                        Text(L10n.t("Model data"))
-                            .foregroundStyle(.secondary)
-                        Picker(L10n.t("Model data"), selection: $preferences.antigravityHeadlineModel) {
-                            ForEach(AntigravityHeadlineModel.allCases) { model in
-                                Text(model.explanation).tag(model)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 140)
-                    }
-                }
-                .padding(.top, 2)
-                .help(L10n.t("Choose which limit appears in the main notch for Antigravity."))
-                .onChange(of: preferences.antigravityHeadlineLimit) { _ in
-                    refresh(provider.id)
-                }
-                .onChange(of: preferences.antigravityHeadlineModel) { _ in
-                    refresh(provider.id)
-                }
-            }
-
-            // Google publishes no limit for a bare API key, so the ring has
-            // nothing to fill against until the user names a ceiling itself.
-            if isConnected, provider.id == "gemini-api" {
-                // The field's own title would be drawn as a leading label
-                // inside a `Form` row, which puts the caption hard against
-                // the box and leaves the unit stranded past it. Hidden, so
-                // the caption above can own the naming and the row can
-                // breathe.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L10n.t("Monthly budget"))
-                    HStack(spacing: 8) {
-                        TextField(L10n.t("None"), value: $preferences.geminiAPIMonthlyTokenBudget,
-                                  format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .labelsHidden()
-                            .frame(width: 130)
-                        Text(L10n.t("tokens"))
-                    }
-                }
-                .padding(.top, 2)
-                .foregroundStyle(.secondary)
-                .help(L10n.t("Fills the ring against a ceiling you choose; Google publishes none for an API key."))
-            }
-            // Ollama owns its credential: the user enters an API key here, stored
-            // in the keychain. The env var OLLAMA_API_KEY is checked first, so a
-            // shell that exports one needs no entry here.
-            if provider.id == "ollama" {
-                ollamaKeyEntry
-            }
-
-            // MiniMax is signed into in Codenotch, or by a Coding Plan key
-            // pasted here. The region is which console that key belongs to.
-            // Stored in the keychain on Save, the same way Ollama's is.
-            if provider.id == "qoder" {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L10n.t("Region")).foregroundStyle(.secondary)
-                    Picker(selection: $preferences.qoderRegion) {
-                        Text(L10n.t("International")).tag(Sites.QoderRegion.global)
-                        Text(L10n.t("China mainland")).tag(Sites.QoderRegion.china)
-                    } label: { EmptyView() }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 160)
-                    Text(L10n.t("Sign in to Qoder in Codenotch. Each region has a separate account and session. Website verification may be required."))
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if provider.id == "minimax" {
-                minimaxEntry
-            }
-
-            // Apify borrows the CLI's login when there is one; the token
-            // pasted here is for a Mac without it. Stored in the keychain on
-            // Save, the same way Ollama's is.
-            if provider.id == "apify" {
-                apifyTokenEntry
-            }
         }
     }
 

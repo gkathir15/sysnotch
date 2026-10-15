@@ -123,80 +123,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["CODENOTCH_DEMO"] == "1" {
             fleet.setSnapshots(Fixtures.snapshots())
         } else {
-            // DeepSeek's Platform usage page is a browser-session provider:
-            // login is explicit, stays in Codenotch's own WKWebView store, and
-            // the page-local requests are refreshed only after that login.
-            let deepSeek = WebSessionProvider(site: Sites.deepSeek)
-            // QianwenAI's Token Plan is the same kind of provider: no usage API
-            // to call, only a console, readable after the user signs in inside
-            // this app's own WKWebView. Unlike MiniMax's sheet below, its ring
-            // *is* this adapter, so it belongs in `webProviders` — exactly once.
-            let qianwen = WebSessionProvider(site: Sites.qianwen)
-            let qoder = WebSessionProvider(site: Sites.qoder(region: preferences.qoderRegion))
-            // MiniMax's ring is MiniMaxProvider. The sheet is the same kind of
-            // WebView DeepSeek uses, but it must not join `webProviders`:
-            // those are appended to `allProviders`, and two adapters with
-            // id `minimax` would both poll, both draw a row, and fight over
-            // the same archive key. Region is applied here and again when
-            // Settings changes it, because the fetch URLs live on the site.
-            let miniMaxWeb = WebSessionProvider(site: Sites.minimax(region: preferences.minimaxRegion))
-            self.miniMaxWeb = miniMaxWeb
-            let webProviders: [WebSessionProvider] = [deepSeek, qianwen, qoder]
-            fleet.signInItems = [deepSeek, miniMaxWeb, qianwen, qoder].map { provider in
-                let name = provider.displayName
-                return (title: L10n.t("Sign in to \(name)…"),
-                        action: { [weak provider] in provider?.presentSignIn() })
-            }
-
-            // Cursor reads the editor's session, or cursor-agent's if the
-            // editor is missing — never a browser one: signing into
-            // cursor.com separately created a second, empty account.
-            //
-            // Built *after* preferences and told what is switched off, so the
-            // very first list it draws already excludes them. Constructed first,
-            // it drew every provider from the archive and only dropped the
-            // switched-off ones once the binding below delivered.
-            Log.usage.info("claude profiles: \(self.claudeProfiles.map(\.displayPath).joined(separator: ", "), privacy: .public)")
-            Log.usage.info("codex profiles: \(self.codexProfiles.map(\.displayPath).joined(separator: ", "), privacy: .public)")
-            Log.usage.info("antigravity profiles: \(self.antigravityProfiles.map(\.displayPath).joined(separator: ", "), privacy: .public)")
-            // Named together rather than one by one: a name derived from the
-            // signed-in address can collide with another profile's, and only a
-            // caller holding every profile can see that.
-            let claudeNames = ClaudeProfile.displayNames(for: claudeProfiles)
-            let claudeProviders = claudeProfiles.map {
-                ClaudeOAuthProvider(profile: $0, displayName: claudeNames[$0.id])
-            }
-            self.claudeProviders = claudeProviders
-            let customProviders: [UsageProvider] = preferences.customEndpoints.filter(\.isEnabled).map { endpoint in
-                CustomEndpointProvider(endpoint: endpoint)
-            }
-            let allProviders: [UsageProvider] = claudeProviders
-                + [CursorLocalProvider()]
-                + codexProfiles.map { CodexLocalProvider(profile: $0) }
-                + antigravityProfiles.map { AntigravityProvider(profile: $0) }
-                + [GLMProvider(), MiniMaxProvider(web: miniMaxWeb), GrokLocalProvider(), DevinLocalProvider(), OpenCodeProvider()]
-                + commandCodeProfiles.map { CommandCodeProvider(profile: $0) }
-                + [GitHubCopilotProvider(), KimiProvider(), KiroProvider(), AmpProvider(),
-                   ApifyProvider(), KiloProvider(),
-                   OllamaLocalProvider(endpoint: URL(string: preferences.ollamaEndpoint)!),
-                   LMStudioLocalProvider(endpoint: URL(string: preferences.lmstudioEndpoint)!),
-                   OllamaProvider(),
-                   // A closure, not the value: the provider is an actor and
-                   // re-reads the budget on every fetch, so a ceiling typed
-                   // into Settings applies without a restart.
-                   GeminiAPIProvider(budget: {
-                       Preferences.storedGeminiAPIMonthlyTokenBudget()
-                   })]
-                + webProviders
-                + customProviders
+            let systemProviders: [UsageProvider] = [
+                RAMProvider(),
+                CPUProvider(),
+                ThermalsProvider(),
+                NetworkProvider(),
+                EnergyProvider()
+            ]
+            let allProviders: [UsageProvider] = systemProviders
             preferences.reconcile(discoveredIDs: allProviders.map(\.id))
             let store = UsageStore(
                 providers: allProviders,
                 disconnected: preferences.disconnectedIDs(among: allProviders.map(\.id)),
-                // Passed at construction, not left to the sink below, for the
-                // same reason `disconnected` is: the sink delivers a run loop
-                // turn later, so without this every launch draws the built-in
-                // order for a frame and then visibly shuffles.
                 order: preferences.providerOrder
             )
             preferences.$customEndpoints
@@ -214,20 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     store?.registerCustomProviders(providers)
                 }
                 .store(in: &cancellables)
-            Costs.attach(to: store)
-            deepSeek.onAuthenticated = { [weak store] in
-                store?.providerAuthenticationChanged(providerID: "deepseek")
-            }
-            qianwen.onAuthenticated = { [weak store] in
-                store?.providerAuthenticationChanged(providerID: "qianwenai")
-            }
-            qoder.onAuthenticated = { [weak store] in
-                store?.providerAuthenticationChanged(providerID: "qoder")
-            }
-            miniMaxWeb.onAuthenticated = { [weak store] in
-                store?.providerAuthenticationChanged(providerID: "minimax")
-            }
-
             let updater = Updater()
             self.updater = updater
             // An update is offered in the notch, and installed there — see
@@ -806,117 +730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.store = store
         }
 
-        // What each agent is doing right now, so the notch can say whether it is
-        // still working without you switching to it.
-        var monitors: [String: any AgentActivityMonitor] = [
-            "cursor": CursorActivityMonitor(),
-            "grok": GrokActivityMonitor(),
-            "gemini-api": GeminiAPIActivityMonitor(),
-            "kimi": KimiActivityMonitor(),
-        ]
-        for profile in antigravityProfiles {
-            monitors[profile.id] = AntigravityActivityMonitor(profile: profile)
-        }
-        var claudeMonitors: [ClaudeSessionMonitor] = []
-        var claudeMonitorsByProfile: [(ClaudeProfile, ClaudeSessionMonitor)] = []
-        for profile in claudeProfiles {
-            let monitor = ClaudeSessionMonitor(
-                directory: profile.sessionsDirectory,
-                projects: profile.projectsDirectory
-            )
-            claudeMonitors.append(monitor)
-            claudeMonitorsByProfile.append((profile, monitor))
-            monitors[profile.id] = monitor
-        }
-
-        // With one profile there is nothing to attribute: every session in the
-        // directory is that account's, by definition. With two or more there
-        // is, because the Claude desktop app files the sessions it hosts under
-        // the *default* profile's directory whichever account it is signed in
-        // to — so the second account's work spun the first account's ring, and
-        // switching account in the app did not move it. See
-        // `ClaudeSessionOwnership`.
-        if claudeProfiles.count > 1 {
-            let index = ClaudeDesktopSessionIndex()
-            let directories = claudeProfiles.map(\.sessionsDirectory)
-            var accounts: [String: String] = [:]
-            var transcripts: [String: ClaudeTranscriptReader] = [:]
-            for profile in claudeProfiles {
-                let path = profile.sessionsDirectory.path
-                if let account = profile.accountID() { accounts[path] = account }
-                transcripts[path] = ClaudeTranscriptReader(projects: profile.projectsDirectory)
-            }
-            let profileIDs = Dictionary(uniqueKeysWithValues: claudeProfiles.map {
-                ($0.sessionsDirectory.path, $0.id)
-            })
-            for (profile, monitor) in claudeMonitorsByProfile {
-                var ownership = ClaudeSessionOwnership(
-                    own: profile.sessionsDirectory,
-                    directories: directories,
-                    accounts: accounts,
-                    transcripts: transcripts,
-                    index: index
-                )
-                ownership.isShown = { [weak preferences] directory in
-                    guard let preferences, let id = profileIDs[directory.path] else { return true }
-                    return preferences.isConnected(id)
-                }
-                monitor.ownership = ownership
-            }
-            let named = accounts.count, total = claudeProfiles.count
-            Log.sessions.info("claude session ownership: \(named, privacy: .public) of \(total, privacy: .public) profiles name an account")
-        }
-        for profile in codexProfiles {
-            monitors[profile.id] = CodexActivityMonitor(profile: profile)
-        }
-
-        // The `/usage` probe is a Claude Code process too, and files a session
-        // for the seconds it runs. Every Claude monitor steps over it by pid
-        // and by its scratch directory, whether or not a token refresher runs
-        // below. Without this the probe showed as a `busy` session, vanished,
-        // and was announced as a turn that finished.
-        for monitor in claudeMonitors {
-            monitor.ignoredPIDs = { ClaudeUsageCLI.runningPIDs }
-            monitor.ignoredWorkingDirectories = [ClaudeUsageCLI.scratchLocation().path]
-        }
-
-        // Renewing the token runs the Claude command, which registers a session
-        // of its own for the second it lives. Every Claude monitor is told to
-        // step over that pid, so it never reaches the notch and never counts as
-        // work in progress.
-        //
-        // Only the default profile is renewed. The command writes whichever
-        // directory `CLAUDE_CONFIG_DIR` names, so a second profile would need
-        // that passed through — behaviour nobody has been able to try on a Mac
-        // with two of them, and an unverified guess is worse here than a ring
-        // that ages the way it already does.
-        if let defaultProvider = claudeProviders.first(where: { $0.profile.slug == nil }) {
-            let refresher = ClaudeTokenRefresher(
-                expiry: { await defaultProvider.tokenExpiry },
-                reload: { await defaultProvider.reloadTokenExpiry() }
-            )
-            for monitor in claudeMonitors {
-                monitor.ignoredPIDs = { [weak refresher] in
-                    var pids = ClaudeUsageCLI.runningPIDs
-                    if let pid = refresher?.launchedPID { pids.insert(pid) }
-                    return pids
-                }
-            }
-            // The one place the failure becomes visible. The store carries the
-            // fact; nothing here retries, and the warning clears itself the
-            // moment a reading comes back.
-            refresher.$outcome
-                .receive(on: RunLoop.main)
-                .sink { [weak self] outcome in
-                    guard case .failed = outcome else { return }
-                    self?.store?.reportRenewalFailed(providerID: defaultProvider.id)
-                }
-                .store(in: &cancellables)
-
-            refresher.start()
-            tokenRefresher = refresher
-        }
-        let activity = ActivityCoordinator(monitors: monitors) { [weak self, weak fleet] id, sessions in
+        let activity = ActivityCoordinator(monitors: [:]) { [weak self, weak fleet] id, sessions in
             guard let fleet else { return }
             fleet.setSessions(providerID: id, sessions: sessions)
             self?.statusItem?.setActivity(providerID: id, sessions: sessions)
@@ -924,43 +738,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.noteWorkState(providerID: id, sessions: sessions)
         }
         self.activityCoordinator = activity
-        activity.setEnabled(preferences.connectedProviders)
-        preferences.$connectedProviders
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak activity] connected in
-                activity?.setEnabled(connected)
-            }
-            .store(in: &cancellables)
 
-        let piResponseMonitor = PiResponseMonitor(
-            onResponse: { [weak self] providerID in
-                _ = self?.store?.refresh(providerID: providerID)
-            },
-            onActivity: { [weak activity] providerID, snapshots in
-                let sessions = snapshots.map {
-                    AgentSession(
-                        id: $0.id,
-                        name: $0.model,
-                        detail: L10n.t("Working"),
-                        state: .busy,
-                        waitingFor: nil,
-                        since: $0.since
-                    )
-                }
-                activity?.setSupplementalSessions(
-                    providerID: providerID,
-                    source: "pi",
-                    sessions: sessions
-                )
-            }
-        )
-        piResponseMonitor.start()
-        self.piResponseMonitor = piResponseMonitor
-
-        store?.isBusy = { [weak self, weak activity] in
-            (activity?.isBusy ?? false) || (self?.lmstudioMetrics?.isBusy ?? false)
-        }
+        store?.isBusy = { false }
         // Read on every look rather than carried in by a sink, for the reason
         // `isBusy` is: a stored copy answers with whatever the preference was
         // when it was last delivered, and this one is a switch somebody flips to
