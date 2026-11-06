@@ -1,7 +1,103 @@
+import AppKit
 import Foundation
 import IOKit
 import IOKit.ps
+import Metal
 import SystemConfiguration
+
+// MARK: - Activity Monitor Navigation Helper
+enum SystemActivityNavigator {
+    @MainActor
+    static func open(tab: String?) {
+        // Tab names for Activity Monitor: "CPU", "Memory", "Energy", "Disk", "Network"
+        let script: String
+        switch tab {
+        case "CPU":
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            tell application "System Events" to tell process "Activity Monitor"
+                try
+                    click radio button "CPU" of radio group 1 of group 1 of toolbar 1 of window 1
+                end try
+            end tell
+            """
+        case "Memory":
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            tell application "System Events" to tell process "Activity Monitor"
+                try
+                    click radio button "Memory" of radio group 1 of group 1 of toolbar 1 of window 1
+                end try
+            end tell
+            """
+        case "Energy":
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            tell application "System Events" to tell process "Activity Monitor"
+                try
+                    click radio button "Energy" of radio group 1 of group 1 of toolbar 1 of window 1
+                end try
+            end tell
+            """
+        case "Disk":
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            tell application "System Events" to tell process "Activity Monitor"
+                try
+                    click radio button "Disk" of radio group 1 of group 1 of toolbar 1 of window 1
+                end try
+            end tell
+            """
+        case "Network":
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            tell application "System Events" to tell process "Activity Monitor"
+                try
+                    click radio button "Network" of radio group 1 of group 1 of toolbar 1 of window 1
+                end try
+            end tell
+            """
+        case "GPU":
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            tell application "System Events" to tell process "Activity Monitor"
+                try
+                    click radio button "CPU" of radio group 1 of group 1 of toolbar 1 of window 1
+                end try
+            end tell
+            """
+        default:
+            script = """
+            tell application "Activity Monitor"
+                activate
+            end tell
+            """
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let appleScript = NSAppleScript(source: script) {
+                var errorInfo: NSDictionary?
+                appleScript.executeAndReturnError(&errorInfo)
+            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ActivityMonitor") {
+                DispatchQueue.main.async {
+                    NSWorkspace.shared.openApplication(at: url, configuration: .init())
+                }
+            }
+        }
+    }
+}
 
 // MARK: - RAM Provider
 actor RAMProvider: UsageProvider {

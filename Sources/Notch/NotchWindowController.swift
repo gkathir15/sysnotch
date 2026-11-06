@@ -1635,8 +1635,28 @@ final class NotchWindowController {
         if notchRect.contains(local),
            let index = cellIndex(along: placement.along(of: local)),
            model.snapshots.indices.contains(index) {
+            let snapshot = model.snapshots[index]
+            // Click navigation: navigate to the corresponding Activity Monitor tab or system pane
+            switch snapshot.id {
+            case "system-cpu":
+                SystemActivityNavigator.open(tab: "CPU")
+            case "system-ram":
+                SystemActivityNavigator.open(tab: "Memory")
+            case "system-energy":
+                SystemActivityNavigator.open(tab: "Energy")
+            case "system-storage":
+                SystemActivityNavigator.open(tab: "Disk")
+            case "system-network":
+                SystemActivityNavigator.open(tab: "Network")
+            case "system-gpu":
+                SystemActivityNavigator.open(tab: "GPU")
+            case "system-thermals", "system-fan":
+                SystemActivityNavigator.open(tab: "CPU")
+            default:
+                break
+            }
+
             if let onRefreshProvider {
-                let snapshot = model.snapshots[index]
                 Task { await model.refresh(snapshot, using: onRefreshProvider) }
             }
         }
