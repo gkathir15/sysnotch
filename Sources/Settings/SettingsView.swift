@@ -69,13 +69,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .accounts:      return "gauge.with.dots.needle.bottom.50percent"
         case .phone:         return "iphone"
-        case .deepseek:      return "chart.line.uptrend.xyaxis"
-        case .ollama:        return "desktopcomputer"
-        case .lmstudio:      return "cpu"
-        case .customEndpoints: return "network"
         case .appearance:    return "paintbrush.fill"
         case .notifications: return "bell.badge.fill"
-        case .costs:         return "banknote.fill"
         case .general:       return "gearshape.fill"
         }
     }

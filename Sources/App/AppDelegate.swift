@@ -450,27 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .sink { [weak fleet] in fleet?.apply(deepSeekPricingSchedule: $0) }
                 .store(in: &cancellables)
 
-            preferences.$qoderRegion
-                .dropFirst()
-                .removeDuplicates()
-                .receive(on: RunLoop.main)
-                .sink { [weak qoder, weak store] region in
-                    guard let qoder else { return }
-                    store?.providerContextChanged(providerID: "qoder") {
-                        qoder.apply(site: Sites.qoder(region: region))
-                    }
-                }
-                .store(in: &cancellables)
 
-            preferences.$minimaxRegion
-                .dropFirst()
-                .removeDuplicates()
-                .receive(on: RunLoop.main)
-                .sink { [weak miniMaxWeb, weak store] region in
-                    miniMaxWeb?.apply(site: Sites.minimax(region: region))
-                    store?.refresh(providerID: "minimax")
-                }
-                .store(in: &cancellables)
 
             preferences.$notchEdge
                 .receive(on: RunLoop.main)
@@ -716,18 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .sink { [weak fleet] ids in fleet?.setRefreshing(ids) }
                 .store(in: &cancellables)
 
-            // CODENOTCH_DISCOVER=<url> loads that page in the signed-in WebView
-            // and logs the API calls it makes — for finding an undocumented
-            // endpoint by watching the site rather than guessing at path names.
-            if let target = ProcessInfo.processInfo.environment["CODENOTCH_DISCOVER"],
-               let url = URL(string: target),
-               let provider = webProviders.first(where: { url.host?.contains($0.id) == true })
-                   ?? webProviders.first {
-                Task {
-                    let calls = await provider.recordCalls(on: url)
-                    Log.usage.notice("discovered: \(calls.joined(separator: "  "), privacy: .public)")
-                }
-            }
+
             self.store = store
         }
 
@@ -899,8 +868,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         if preferences.sessionEndSound { SessionChime.play(preferences.sessionEndSoundName) }
-        var notice = UsageResetEvent(providerID: "codenotch", providerName: "Codenotch",
-                                     windowLabel: "", glyph: .claude,
+        var notice = UsageResetEvent(providerID: "codenotch", providerName: "Sys Notch",
+                                     windowLabel: "", glyph: .ram,
                                      previousFraction: 0, currentFraction: 0, resetsAt: nil)
         notice.noticeTitle = L10n.t("Codenotch test")
         notice.noticeSubtitle = L10n.t("This is what one looks like.")
@@ -929,13 +898,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func previewUsageResetAlert() {
         guard let preferences, let fleet = notchFleet else { return }
         let demo = UsageResetEvent(
-            providerID: "claude",
-            providerName: "Claude",
-            windowLabel: "5-hour limit",
-            glyph: .claude,
+            providerID: "system-ram",
+            providerName: "RAM",
+            windowLabel: "Memory Usage",
+            glyph: .ram,
             previousFraction: 0.95,
-            currentFraction: 0.00,
-            resetsAt: Date().addingTimeInterval(5 * 3600)
+            currentFraction: 0.40,
+            resetsAt: nil
         )
         if preferences.usageResetSound {
             SessionChime.play(preferences.usageResetSoundName)
@@ -975,13 +944,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let preferences, let fleet = notchFleet else { return }
         let demo = UsageAlertEvent(
             kind: .sessionLimitReached,
-            providerID: "claude",
-            providerName: "Claude",
-            windowLabel: "5-hour",
-            glyph: .claude,
-            previousFraction: 0.95,
+            providerID: "system-cpu",
+            providerName: "CPU",
+            windowLabel: "CPU Load",
+            glyph: .cpu,
+            previousFraction: 0.85,
             currentFraction: 1.00,
-            resetsAt: Date().addingTimeInterval(45 * 60)
+            resetsAt: nil
         )
         if preferences.limitReachedSound {
             SessionChime.play(preferences.limitReachedSoundName)
@@ -994,13 +963,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let preferences, let fleet = notchFleet else { return }
         let demo = UsageAlertEvent(
             kind: .weeklyLimitReached,
-            providerID: "claude",
-            providerName: "Claude",
-            windowLabel: "Weekly",
-            glyph: .claude,
-            previousFraction: 0.98,
-            currentFraction: 1.00,
-            resetsAt: Date().addingTimeInterval(3 * 86400)
+            providerID: "system-energy",
+            providerName: "Energy",
+            windowLabel: "Battery Level",
+            glyph: .energy,
+            previousFraction: 0.20,
+            currentFraction: 0.05,
+            resetsAt: nil
         )
         if preferences.limitReachedSound {
             SessionChime.play(preferences.limitReachedSoundName)
