@@ -26,7 +26,7 @@ extension View {
 /// crossing-and-notification machinery it switches is Notifications' to
 /// explain.
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case accounts, appearance, notifications, general
+    case accounts, network, appearance, notifications, general
 
     static var visible: [SettingsSection] {
         allCases
@@ -44,6 +44,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .accounts:      return L10n.t("System Metrics")
+        case .network:       return L10n.t("Network")
         case .appearance:    return L10n.t("Appearance")
         case .notifications: return L10n.t("Notifications")
         case .general:       return L10n.t("General")
@@ -56,6 +57,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .accounts:      return L10n.t("Choose which system metrics the notch displays.")
+        case .network:       return L10n.t("This Mac's connection and the devices beside it.")
         case .appearance:    return L10n.t("How the notch looks and where it sits.")
         case .notifications: return L10n.t("What Sys Notch tells you, and when.")
         case .general:       return L10n.t("Startup and everything else.")
@@ -65,6 +67,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var icon: String {
         switch self {
         case .accounts:      return "gauge.with.dots.needle.bottom.50percent"
+        case .network:       return "network"
         case .appearance:    return "paintbrush.fill"
         case .notifications: return "bell.badge.fill"
         case .general:       return "gearshape.fill"
@@ -77,6 +80,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var tint: Color {
         switch self {
         case .accounts:      return .blue
+        case .network:       return .green
         case .appearance:    return .indigo
         case .notifications: return .red
         case .general:       return .gray
@@ -626,6 +630,7 @@ struct SettingsView: View {
     private func paneContent(for section: SettingsSection) -> some View {
         switch section {
         case .accounts:      accountsPane
+        case .network:       NetworkPage()
         case .appearance:    appearancePane
         case .notifications: notificationsPane
         case .general:       generalPane
