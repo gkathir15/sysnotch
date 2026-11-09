@@ -47,6 +47,8 @@ enum ProviderGlyph: String, Codable, Equatable {
     // System Activity Monitor glyphs
     case ram = "system-ram"
     case cpu = "system-cpu"
+    case gpu = "system-gpu"
+    case disk = "system-storage"
     case thermals = "system-thermals"
     case network = "system-network"
     case energy = "system-energy"
@@ -55,7 +57,9 @@ enum ProviderGlyph: String, Codable, Equatable {
     var systemSymbolName: String? {
         switch self {
         case .ram: return "memorychip"
-        case .cpu: return "cpu"
+        case .cpu: return "cpu.fill"
+        case .gpu: return "display"
+        case .disk: return "internaldrive.fill"
         case .thermals: return "thermometer.medium"
         case .network: return "network"
         case .energy: return "bolt.fill"
@@ -110,7 +114,7 @@ enum ProviderGlyph: String, Codable, Equatable {
         // the same scale brings this ink to the same extent.
         case .qianwenAI, .qoder: return 0.97
         case .devin, .qwen, .gemma, .meta, .deepseek, .mistral,
-             .ram, .cpu, .thermals, .network, .energy, .fan: return 1.0
+             .ram, .cpu, .gpu, .disk, .thermals, .network, .energy, .fan: return 1.0
         }
     }
 
@@ -138,7 +142,7 @@ enum ProviderGlyph: String, Codable, Equatable {
         // A fallback only: glyph-minimax in the asset catalogue is drawn instead.
         case .minimax: return GlyphOutline.minimax
         case .ollama, .ollamaLocal: return GlyphOutline.ollama
-        case .ram, .cpu, .thermals, .network, .energy, .fan: return []
+        case .ram, .cpu, .gpu, .disk, .thermals, .network, .energy, .fan: return []
         }
     }
 }

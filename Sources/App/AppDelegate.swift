@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let systemProviders: [UsageProvider] = [
                 RAMProvider(),
                 CPUProvider(),
+                GPUProvider(),
+                DiskProvider(),
                 ThermalsProvider(),
                 NetworkProvider(),
                 EnergyProvider(),

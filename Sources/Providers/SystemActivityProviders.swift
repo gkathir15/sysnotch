@@ -322,6 +322,450 @@ actor CPUProvider: UsageProvider {
     }
 }
 
+// MARK: - GPU Provider
+actor GPUProvider: UsageProvider {
+    nonisolated let id = "system-gpu"
+    nonisolated let displayName = "GPU"
+    nonisolated let glyph = ProviderGlyph.gpu
+    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+
+    struct Reading {
+        var utilization: Double?
+        var rendererUtilization: Double?
+        var inUseBytes: UInt64?
+        var allocatedBytes: UInt64?
+
+        init(utilization: Double? = nil,
+             rendererUtilization: Double? = nil,
+             inUseBytes: UInt64? = nil,
+             allocatedBytes: UInt64? = nil) {
+            self.utilization = utilization
+            self.rendererUtilization = rendererUtilization
+            self.inUseBytes = inUseBytes
+            self.allocatedBytes = allocatedBytes
+        }
+    }
+
+    init() {}
+
+    nonisolated func account() -> ProviderAccount? {
+        let name = MTLCreateSystemDefaultDevice()?.name ?? "GPU"
+        return ProviderAccount(label: name, plan: nil, source: "Metal", manageURL: nil)
+    }
+
+    func signOut() async {}
+    nonisolated func forgetCachedCredential() {}
+
+    /// The accelerator's own PerformanceStatistics dictionary. Apple Silicon
+    /// publishes it under IOAccelerator; Intel Macs use the same keys.
+    static func read() -> Reading {
+        var reading = Reading()
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault,
+                                           IOServiceMatching("IOAccelerator"),
+                                           &iterator) == KERN_SUCCESS else {
+            return reading
+        }
+        defer { IOObjectRelease(iterator) }
+
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            defer { IOObjectRelease(service) }
+            guard let statistics = IORegistryEntryCreateCFProperty(
+                service,
+                "PerformanceStatistics" as CFString,
+                kCFAllocatorDefault,
+                0
+            )?.takeRetainedValue() as? [String: Any] else { continue }
+
+            reading.utilization = fraction(statistics["Device Utilization %"])
+            reading.rendererUtilization = fraction(statistics["Renderer Utilization %"])
+            reading.inUseBytes = byteCount(statistics["In use system memory"])
+            reading.allocatedBytes = byteCount(statistics["Alloc system memory"])
+            break
+        }
+        return reading
+    }
+
+    static func fraction(_ value: Any?) -> Double? {
+        guard let number = number(value) else { return nil }
+        let fraction = number > 1 ? number / 100 : number
+        return min(max(fraction, 0), 1)
+    }
+
+    static func byteCount(_ value: Any?) -> UInt64? {
+        guard let number = number(value), number >= 0 else { return nil }
+        return UInt64(number)
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        switch value {
+        case let value as NSNumber: return value.doubleValue
+        case let value as Double: return value
+        case let value as Int: return Double(value)
+        case let value as Int64: return Double(value)
+        case let value as UInt64: return Double(value)
+        default: return nil
+        }
+    }
+
+    private static func bytesText(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+    }
+
+    func fetchSnapshot() async throws -> ProviderSnapshot {
+        let reading = Self.read()
+        let device = MTLCreateSystemDefaultDevice()
+        let budget = device?.recommendedMaxWorkingSetSize
+
+        let load = reading.utilization ?? reading.rendererUtilization ?? 0
+        let loadPercent = Int((load * 100).rounded())
+        let rendererPercent = Int(((reading.rendererUtilization ?? load) * 100).rounded())
+
+        var windows: [LimitWindow] = [
+            LimitWindow(
+                id: "gpu-usage",
+                label: L10n.t("GPU Load"),
+                usedFraction: load,
+                usedText: "\(loadPercent)%",
+                detail: "\(L10n.t("Renderer")): \(rendererPercent)%"
+            )
+        ]
+
+        if let inUse = reading.inUseBytes {
+            let fraction = budget.flatMap { $0 > 0 ? min(Double(inUse) / Double($0), 1) : nil }
+            windows.append(LimitWindow(
+                id: "gpu-memory",
+                label: L10n.t("GPU Memory"),
+                usedFraction: fraction,
+                usedText: Self.bytesText(inUse),
+                detail: budget.map { "\(Self.bytesText(inUse)) / \(Self.bytesText($0))" }
+            ))
+        }
+
+        if let allocated = reading.allocatedBytes {
+            windows.append(LimitWindow(
+                id: "gpu-allocated",
+                label: L10n.t("Allocated Memory"),
+                usedText: Self.bytesText(allocated)
+            ))
+        }
+
+        return ProviderSnapshot(
+            id: id,
+            displayName: displayName,
+            glyph: glyph,
+            fidelity: .official,
+            status: .ok,
+            windows: windows,
+            headlineID: "gpu-usage"
+        )
+    }
+}
+
+// MARK: - Disk Provider
+actor DiskProvider: UsageProvider {
+    nonisolated let id = "system-storage"
+    nonisolated let displayName = "Disk"
+    nonisolated let glyph = ProviderGlyph.disk
+    nonisolated let signInRoute = SignInRoute.guidance(L10n.t("System Activity Monitor"))
+
+    struct Volume {
+        var name: String
+        var total: UInt64
+        var free: UInt64
+        var isRoot: Bool
+        var mountBSD: String?
+
+        init(name: String, total: UInt64, free: UInt64, isRoot: Bool, mountBSD: String? = nil) {
+            self.name = name
+            self.total = total
+            self.free = free
+            self.isRoot = isRoot
+            self.mountBSD = mountBSD
+        }
+    }
+
+    struct DiskSample {
+        var bsd: String
+        var name: String
+        var read: UInt64
+        var write: UInt64
+        var slices: Set<String>
+
+        init(bsd: String, name: String, read: UInt64, write: UInt64, slices: Set<String>) {
+            self.bsd = bsd
+            self.name = name
+            self.read = read
+            self.write = write
+            self.slices = slices
+        }
+    }
+
+    private var lastDiskCounters: [String: (read: UInt64, write: UInt64)] = [:]
+    private var lastReadBytes: UInt64 = 0
+    private var lastWriteBytes: UInt64 = 0
+    private var lastSample: Date?
+
+    init() {}
+
+    nonisolated func account() -> ProviderAccount? {
+        ProviderAccount(label: "\(Self.volumes().count) Volumes", plan: nil, source: "macOS", manageURL: nil)
+    }
+
+    func signOut() async {}
+    nonisolated func forgetCachedCredential() {}
+
+    // MARK: Disk capacity and mounted volumes
+
+    static func capacity() -> (total: UInt64, free: UInt64) {
+        let keys: Set<URLResourceKey> = [
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey
+        ]
+        guard let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: keys) else {
+            return (0, 0)
+        }
+        let total = UInt64(max(values.volumeTotalCapacity ?? 0, 0))
+        let important = values.volumeAvailableCapacityForImportantUsage ?? 0
+        let plain = Int64(values.volumeAvailableCapacity ?? 0)
+        return (total, UInt64(max(max(important, plain), 0)))
+    }
+
+    static func volumes() -> [Volume] {
+        let keys: Set<URLResourceKey> = [
+            .volumeNameKey,
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey,
+            .volumeIsRootFileSystemKey
+        ]
+        guard let urls = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: Array(keys),
+            options: [.skipHiddenVolumes]
+        ) else { return [] }
+
+        var seen = Set<String>()
+        var volumes: [Volume] = []
+        for url in urls {
+            // The Data volume is the same storage as the root volume, and the
+            // other synthetic volumes are not something a user can free space on.
+            if url.path.hasPrefix("/System/Volumes/") { continue }
+            guard let values = try? url.resourceValues(forKeys: keys) else { continue }
+            let name = values.volumeName ?? url.lastPathComponent
+            let total = UInt64(max(values.volumeTotalCapacity ?? 0, 0))
+            guard total > 0, seen.insert(name).inserted else { continue }
+            let important = values.volumeAvailableCapacityForImportantUsage ?? 0
+            let plain = Int64(values.volumeAvailableCapacity ?? 0)
+            let free = UInt64(max(max(important, plain), 0))
+            volumes.append(Volume(
+                name: name,
+                total: total,
+                free: free,
+                isRoot: url.path == "/",
+                mountBSD: mountBSD(of: url.path)
+            ))
+        }
+        return volumes.sorted {
+            if $0.isRoot != $1.isRoot { return $0.isRoot }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    static func mountBSD(of path: String) -> String? {
+        var info = statfs()
+        guard statfs(path, &info) == 0 else { return nil }
+        let device = withUnsafePointer(to: &info.f_mntfromname) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) {
+                String(cString: $0)
+            }
+        }
+        return device.hasPrefix("/dev/") ? String(device.dropFirst(5)) : device
+    }
+
+    // MARK: IOKit block-storage counters
+
+    static func wholeMedia(of driver: io_service_t) -> (bsd: String, name: String)? {
+        guard let media = findWholeMedia(driver) else { return nil }
+        defer { IOObjectRelease(media) }
+        guard let bsd = property(of: media, "BSD Name") as? String else { return nil }
+        let product = property(of: media, "Product Name") as? String
+        return (bsd, product ?? bsd)
+    }
+
+    private static func findWholeMedia(_ entry: io_service_t) -> io_service_t? {
+        if (property(of: entry, "Whole") as? Bool) == true,
+           property(of: entry, "BSD Name") as? String != nil {
+            return entry
+        }
+        var iterator: io_iterator_t = 0
+        guard IORegistryEntryGetChildIterator(entry, kIOServicePlane, &iterator) == KERN_SUCCESS else {
+            return nil
+        }
+        defer { IOObjectRelease(iterator) }
+        while case let child = IOIteratorNext(iterator), child != 0 {
+            if let found = findWholeMedia(child) {
+                IOObjectRelease(child)
+                return found
+            }
+            IOObjectRelease(child)
+        }
+        return nil
+    }
+
+    static func collectSlices(of entry: io_service_t, into slices: inout Set<String>) {
+        if let bsd = property(of: entry, "BSD Name") as? String {
+            slices.insert(bsd)
+        }
+        var iterator: io_iterator_t = 0
+        guard IORegistryEntryGetChildIterator(entry, kIOServicePlane, &iterator) == KERN_SUCCESS else {
+            return
+        }
+        defer { IOObjectRelease(iterator) }
+        while case let child = IOIteratorNext(iterator), child != 0 {
+            collectSlices(of: child, into: &slices)
+            IOObjectRelease(child)
+        }
+    }
+
+    private static func property(of entry: io_service_t, _ key: String) -> Any? {
+        IORegistryEntryCreateCFProperty(entry, key as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+    }
+
+    static func diskCounters() -> [DiskSample] {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault,
+                                           IOServiceMatching("IOBlockStorageDriver"),
+                                           &iterator) == KERN_SUCCESS else { return [] }
+        defer { IOObjectRelease(iterator) }
+
+        var samples: [DiskSample] = []
+        while case let driver = IOIteratorNext(iterator), driver != 0 {
+            defer { IOObjectRelease(driver) }
+            guard let statistics = property(of: driver, "Statistics") as? [String: Any],
+                  let whole = wholeMedia(of: driver) else { continue }
+
+            var slices = Set<String>()
+            collectSlices(of: driver, into: &slices)
+            slices.remove(whole.bsd)
+
+            samples.append(DiskSample(
+                bsd: whole.bsd,
+                name: whole.name,
+                read: (statistics["Bytes (Read)"] as? NSNumber)?.uint64Value ?? 0,
+                write: (statistics["Bytes (Write)"] as? NSNumber)?.uint64Value ?? 0,
+                slices: slices
+            ))
+        }
+        return samples
+    }
+
+    static func ioCounters() -> (read: UInt64, write: UInt64) {
+        diskCounters().reduce((0, 0)) { totals, sample in
+            (totals.0 + sample.read, totals.1 + sample.write)
+        }
+    }
+
+    // MARK: Display
+
+    private static func bytesText(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    private static func rateText(_ bytesPerSecond: Double) -> String {
+        if bytesPerSecond < 1024 { return "0 KB/s" }
+        if bytesPerSecond < 1_048_576 {
+            return String(format: "%.0f KB/s", bytesPerSecond / 1024)
+        }
+        if bytesPerSecond < 1_073_741_824 {
+            return String(format: "%.1f MB/s", bytesPerSecond / 1_048_576)
+        }
+        return String(format: "%.1f GB/s", bytesPerSecond / 1_073_741_824)
+    }
+
+    func fetchSnapshot() async throws -> ProviderSnapshot {
+        let now = Date()
+        let samples = Self.diskCounters()
+        let totalRead = samples.reduce(0) { $0 + $1.read }
+        let totalWrite = samples.reduce(0) { $0 + $1.write }
+        let elapsed = lastSample.map { now.timeIntervalSince($0) } ?? 0
+
+        var readRate = 0.0
+        var writeRate = 0.0
+        if elapsed > 0 {
+            if totalRead >= lastReadBytes {
+                readRate = Double(totalRead - lastReadBytes) / elapsed
+            }
+            if totalWrite >= lastWriteBytes {
+                writeRate = Double(totalWrite - lastWriteBytes) / elapsed
+            }
+        }
+
+        var counters: [String: (read: UInt64, write: UInt64)] = [:]
+        for sample in samples {
+            counters[sample.bsd] = (sample.read, sample.write)
+        }
+        lastDiskCounters = counters
+        lastReadBytes = totalRead
+        lastWriteBytes = totalWrite
+        lastSample = now
+
+        let capacity = Self.capacity()
+        let volumes = Self.volumes()
+        let used = capacity.total > capacity.free ? capacity.total - capacity.free : 0
+        let usedFraction = capacity.total > 0 ? Double(used) / Double(capacity.total) : nil
+
+        var windows: [LimitWindow] = [
+            LimitWindow(
+                id: "disk-usage",
+                label: L10n.t("Disk Space"),
+                usedFraction: usedFraction,
+                usedText: "\(Self.bytesText(capacity.free)) " + L10n.t("free"),
+                detail: "\(Self.bytesText(used)) " + L10n.t("of") + " \(Self.bytesText(capacity.total)) " + L10n.t("used")
+            ),
+            LimitWindow(
+                id: "disk-read",
+                label: L10n.t("Read"),
+                usedText: Self.rateText(readRate)
+            ),
+            LimitWindow(
+                id: "disk-write",
+                label: L10n.t("Write"),
+                usedText: Self.rateText(writeRate)
+            ),
+            LimitWindow(
+                id: "disk-rate",
+                label: L10n.t("Disk Activity"),
+                usedText: "R \(Self.rateText(readRate)) · W \(Self.rateText(writeRate))",
+                detail: samples.isEmpty ? nil : "\(samples.count) " + L10n.t("drives")
+            )
+        ]
+
+        for volume in volumes {
+            let free = min(volume.free, volume.total)
+            let used = volume.total - free
+            windows.append(LimitWindow(
+                id: "disk-volume-\(volume.name)",
+                label: volume.name,
+                usedFraction: volume.total > 0 ? Double(used) / Double(volume.total) : nil,
+                usedText: "\(Self.bytesText(free)) " + L10n.t("free"),
+                detail: "\(Self.bytesText(used)) " + L10n.t("of") + " \(Self.bytesText(volume.total))"
+            ))
+        }
+
+        return ProviderSnapshot(
+            id: id,
+            displayName: displayName,
+            glyph: glyph,
+            fidelity: .official,
+            status: .ok,
+            windows: windows,
+            headlineID: "disk-usage"
+        )
+    }
+}
+
 // MARK: - Thermals Provider
 actor ThermalsProvider: UsageProvider {
     nonisolated let id = "system-thermals"
@@ -543,6 +987,85 @@ actor EnergyProvider: UsageProvider {
     func signOut() async {}
     nonisolated func forgetCachedCredential() {}
 
+    nonisolated static let assumedPeakWatts: Double = 96
+
+    /// AppleSmartBattery carries the adapter, amperage and power telemetry that
+    /// IOPS does not expose. A desktop with no battery simply returns nil.
+    nonisolated static func smartBatteryProperties() -> [String: Any]? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                  IOServiceMatching("AppleSmartBattery"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+
+        var properties: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS else {
+            return nil
+        }
+        return properties?.takeRetainedValue() as? [String: Any]
+    }
+
+    nonisolated static func number(_ value: Any?) -> Double? {
+        switch value {
+        case let value as NSNumber: return value.doubleValue
+        case let value as Double: return value
+        case let value as Int: return Double(value)
+        case let value as Int64: return Double(value)
+        case let value as UInt64: return Double(value)
+        default: return nil
+        }
+    }
+
+    /// The adapter's rated watts, when macOS reports them.
+    nonisolated static func adapterWatts(from properties: [String: Any]?) -> Double? {
+        guard let properties else { return nil }
+        let details = properties["AdapterDetails"] as? [String: Any]
+        return number(details?["Watts"]) ?? number(properties["AdapterWatts"])
+    }
+
+    /// The machine's ceiling. Without an adapter rating, the old app used a
+    /// deliberately conservative fixed figure rather than inventing a peak.
+    nonisolated static func peakWatts(from battery: [String: Any]?) -> Double {
+        guard let watts = adapterWatts(from: battery), watts > 0 else {
+            return assumedPeakWatts
+        }
+        return watts
+    }
+
+    /// Prefer the system power telemetry in milliwatts. On Intel Macs, fall
+    /// back to the battery's voltage and instantaneous amperage.
+    nonisolated static func powerDrawWatts(from properties: [String: Any]) -> Double? {
+        if let telemetry = properties["PowerTelemetryData"] as? [String: Any] {
+            for key in ["SystemPowerIn", "SystemLoad", "SystemPowerOut", "AdapterPower"] {
+                if let milliwatts = number(telemetry[key]), milliwatts > 0 {
+                    return milliwatts / 1000
+                }
+            }
+        }
+
+        guard let millivolts = number(properties["Voltage"]),
+              let milliamps = number(properties["InstantAmperage"] ?? properties["Amperage"]),
+              millivolts > 0, milliamps != 0 else { return nil }
+        return abs(millivolts * milliamps) / 1_000_000
+    }
+
+    /// Watt-hours taken out of the pack since it was last full: the raw
+    /// capacities are in mAh, the voltage in mV.
+    nonisolated static func wattHoursConsumed(from properties: [String: Any]) -> Double? {
+        guard let full = number(properties["AppleRawMaxCapacity"]),
+              let current = number(properties["AppleRawCurrentCapacity"]),
+              let millivolts = number(properties["Voltage"]),
+              full > current, millivolts > 0 else { return nil }
+        return (full - current) * millivolts / 1_000_000
+    }
+
+    nonisolated static func wattsText(_ watts: Double) -> String {
+        String(format: "%.1f W", watts)
+    }
+
+    nonisolated static func wattHoursText(_ wattHours: Double) -> String {
+        String(format: "%.1f Wh", wattHours)
+    }
+
     func fetchSnapshot() async throws -> ProviderSnapshot {
         var batteryLevel: Double = 1.0
         var isCharging = false
@@ -581,6 +1104,12 @@ actor EnergyProvider: UsageProvider {
                 }
             }
         }
+
+        let battery = Self.smartBatteryProperties()
+        let powerDraw = battery.flatMap { Self.powerDrawWatts(from: $0) }
+        let peak = Self.peakWatts(from: battery)
+        let adapter = battery.flatMap { Self.adapterWatts(from: $0) }
+        let consumed = battery.flatMap { Self.wattHoursConsumed(from: $0) }
 
         let percent = Int((batteryLevel * 100).rounded())
         let statusString: String
@@ -638,7 +1167,36 @@ actor EnergyProvider: UsageProvider {
             usedText: isCharging ? L10n.t("Charging") : (hasBattery ? (isCharged ? L10n.t("Fully Charged") : L10n.t("Discharging")) : L10n.t("Connected"))
         )
 
-        var windows = [primaryWindow, powerSourceWindow, chargingWindow]
+        var windows: [LimitWindow] = []
+
+        if let powerDraw {
+            windows.append(LimitWindow(
+                id: "energy-draw",
+                label: L10n.t("Power Draw"),
+                usedFraction: min(max(powerDraw / peak, 0), 1),
+                usedText: Self.wattsText(powerDraw),
+                detail: "\(Self.wattsText(powerDraw)) " + L10n.t("of") + " \(Self.wattsText(peak)) — " + L10n.t("what this Mac can draw at full tilt")
+            ))
+        }
+
+        windows.append(contentsOf: [primaryWindow, powerSourceWindow, chargingWindow])
+
+        if let adapter {
+            windows.append(LimitWindow(
+                id: "energy-adapter",
+                label: L10n.t("Adapter"),
+                usedText: Self.wattsText(adapter)
+            ))
+        }
+
+        if let consumed {
+            windows.append(LimitWindow(
+                id: "energy-consumed",
+                label: L10n.t("Energy Used"),
+                usedText: Self.wattHoursText(consumed),
+                detail: L10n.t("Since last full charge")
+            ))
+        }
 
         if let mins = timeRemainingMinutes {
             let hrs = mins / 60
@@ -660,7 +1218,7 @@ actor EnergyProvider: UsageProvider {
             fidelity: .official,
             status: .ok,
             windows: windows,
-            headlineID: "energy-status"
+            headlineID: powerDraw == nil ? "energy-status" : "energy-draw"
         )
     }
 }
