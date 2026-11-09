@@ -337,17 +337,6 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
-    /// The German keeps every format specifier in the order the English put
-    /// them, so an `Int` still lands on `%lld` and a `String` on `%@` — the
-    /// same trap the Simplified Chinese threshold alert fell into by
-    /// reordering without positional specifiers.
-    func testThresholdAlertKeepsArgumentOrderInGerman() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: german),
-            "80% des weekly-Limits verwendet."
-        )
-    }
-
     // MARK: - Brazilian Portuguese
 
     func testElapsedCopyInBrazilianPortuguese() {
@@ -492,18 +481,6 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
-    /// The Japanese keeps every format specifier in the order the English put
-    /// them, so an `Int` still lands on `%lld` and a `String` on `%@`. This is
-    /// the threshold alert, whose two arguments are of different types and
-    /// would be read through the wrong conversion if a translation swapped
-    /// them without positional specifiers.
-    func testThresholdAlertKeepsArgumentOrderInJapanese() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: japanese),
-            "80% を使用（weekly の上限）。"
-        )
-    }
-
     // MARK: - Russian
 
     func testCoreCopyInRussian() {
@@ -530,13 +507,6 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
-    func testRussianThresholdAlertKeepsArgumentOrder() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: russian),
-            "Использовано 80% от лимита «weekly»."
-        )
-    }
-
     // MARK: - Ukrainian
 
     func testCoreCopyInUkrainian() {
@@ -557,13 +527,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(
             L10n.t("Sign in to \("Perplexity")", locale: ukrainian),
             "Увійти в Perplexity"
-        )
-    }
-
-    func testUkrainianThresholdAlertKeepsArgumentOrder() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: ukrainian),
-            "Використано 80% ліміту «weekly»."
         )
     }
 
@@ -591,13 +554,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(
             L10n.t("Sign in to \("Perplexity")", locale: zhHant),
             "登入 Perplexity"
-        )
-    }
-
-    func testTraditionalChineseThresholdAlertKeepsArgumentOrder() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: zhHant),
-            "已用其 weekly 額度的 80%。"
         )
     }
 
@@ -640,15 +596,6 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
-    /// Uzbek names the limit before the percentage, so this is the one
-    /// reordered string in the catalog — `%2$@` then `%1$lld`.
-    func testUzbekThresholdAlertKeepsArgumentOrder() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: uzbek),
-            "weekly limitining 80% ishlatilgan."
-        )
-    }
-
     // MARK: - Turkish
 
     func testCoreCopyInTurkish() {
@@ -673,15 +620,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(
             L10n.t("Sign in to \("Perplexity")", locale: turkish),
             "Giriş yap: Perplexity"
-        )
-    }
-
-    /// Turkish names the limit before the percentage, so this string takes
-    /// its values numbered — `%2$@` then `%1$lld`.
-    func testTurkishThresholdAlertKeepsArgumentOrder() {
-        XCTAssertEqual(
-            L10n.t("\(80)% of its \("weekly") limit used.", locale: turkish),
-            "weekly limitinin %80 kadarı kullanıldı."
         )
     }
 

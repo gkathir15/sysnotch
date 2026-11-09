@@ -55,12 +55,7 @@ final class NotchFleet {
     private var watchLimit: Double = 0.50
     private var criticalLimit: Double = 0.70
     private var colorTransitionStyle: ColorTransitionStyle = .hardStep
-    /// One choice for the whole fleet, like the edge and the size: a weekly
-    /// ring on one display and not another would read as a bug.
-    private var weeklyRing: WeeklyRing = .off
-    private var weeklyRingDashed: Bool = false
     private var showsNotchReadings: Bool = true
-    private var weeklyReading: Bool = false
     private var foldsForFullScreen = true
     private var surfaceStyle: NotchSurfaceStyle = .glass
     private var deepSeekPricingEnabled = true
@@ -186,27 +181,6 @@ final class NotchFleet {
         }
     }
 
-    func apply(weeklyReading: Bool) {
-        self.weeklyReading = weeklyReading
-        for controller in controllers.values {
-            controller.model.weeklyReading = weeklyReading
-        }
-    }
-
-    func apply(weeklyRingDashed: Bool) {
-        self.weeklyRingDashed = weeklyRingDashed
-        for controller in controllers.values {
-            controller.model.weeklyRingDashed = weeklyRingDashed
-        }
-    }
-
-    func apply(weeklyRing: WeeklyRing) {
-        self.weeklyRing = weeklyRing
-        for controller in controllers.values {
-            controller.model.weeklyRing = weeklyRing
-        }
-    }
-
     func apply(watchLimit: Double, criticalLimit: Double) {
         self.watchLimit = watchLimit
         self.criticalLimit = criticalLimit
@@ -315,18 +289,6 @@ final class NotchFleet {
         for controller in controllers.values {
             controller.peek(for: duration, focusing: pid)
         }
-    }
-
-    /// Shows a usage reset notification modal on every panel.
-    /// Returns whether at least one notch had somewhere to show the card. With
-    /// every notch hidden the alert would otherwise vanish without a trace.
-    @discardableResult
-    func showResetAlert(_ event: UsageResetEvent, duration: TimeInterval = 5.0) -> Bool {
-        var shown = false
-        for controller in controllers.values {
-            shown = controller.showResetAlert(event, duration: duration) || shown
-        }
-        return shown
     }
 
     func setRefreshing(_ ids: Set<String>) {
@@ -443,10 +405,7 @@ final class NotchFleet {
         controller.model.watchLimit = watchLimit
         controller.model.criticalLimit = criticalLimit
         controller.model.colorTransitionStyle = colorTransitionStyle
-        controller.model.weeklyRing = weeklyRing
-        controller.model.weeklyRingDashed = weeklyRingDashed
         controller.model.showsNotchReadings = showsNotchReadings
-        controller.model.weeklyReading = weeklyReading
         controller.model.surfaceStyle = surfaceStyle
         controller.model.deepSeekPricingEnabled = deepSeekPricingEnabled
         controller.model.deepSeekPricingSchedule = deepSeekPricingSchedule

@@ -122,14 +122,6 @@ to jump to. Nothing is announced from the first reading either: every session
 already running at launch arrives with no history, and treating that as a
 transition would ring once per open window on every start.
 
-## Alerts
-
-A provider's headline limit crossing **80%** — and reaching **100%** —
-becomes a system notification: once per crossing, never repeated while it
-stays crossed, and again only after the window has genuinely rolled over.
-Each provider can be muted from its own row in Settings, and macOS permission
-is asked on the first real alert rather than at launch.
-
 ## Placement
 
 The notch lives on any of the four screen edges. Right and left keep a

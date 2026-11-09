@@ -12,9 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferences: Preferences?
     private var settings: SettingsWindowController?
     private var whatsNew: WhatsNewWindowController?
-    private var thresholdNotifier: ThresholdNotifier?
-    private var resetWatcher: UsageResetWatcher?
-    private var limitWatcher: UsageLimitWatcher?
     private var statusItem: StatusItemController?
     /// Keeps the Claude keychain token from ageing out on a Mac where the CLI
     /// is never run by hand. See `ClaudeTokenRefresher`.
@@ -62,31 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The snapshots as the rings draw them: the vendor's own, with the weekly
-    /// window leading where that is switched on, and the daily pace laid over
-    /// that where it is. One place, so the notch and the phone agree on what a
-    /// ring means. The menu bar and the alert watchers are deliberately fed the
-    /// vendor's own order instead — see their sink.
-    static func drawn(_ snapshots: [ProviderSnapshot], weekly: Bool, paced: Bool)
-    -> [ProviderSnapshot] {
-        DailyPace.apply(to: WeeklyHeadline.apply(to: snapshots, enabled: weekly), enabled: paced)
-    }
-
-    /// Every Claude Code configuration directory on this Mac — `~/.claude` and
-    /// any `~/.claude-<slug>` — found once at launch. Each gets a usage
-    /// provider and a session monitor of its own, keyed by the same id, so a
-    /// work login's sessions spin the work ring and nobody else's.
-    private let claudeProfiles = ClaudeProfile.discover()
-    private let codexProfiles = CodexProfile.discover()
-    private let antigravityProfiles = AntigravityProfile.discover()
-    private let commandCodeProfiles = CommandCodeProfile.discover()
-    /// Held as concrete providers, not just handed to the store: the token
-    /// refresher needs to ask one of them how long its token has left, and the
-    /// protocol has no business carrying that.
-    private var claudeProviders: [ClaudeOAuthProvider] = []
-    /// MiniMax Platform sign-in sheet. Not a UsageProvider — that is MiniMaxProvider.
-    private var miniMaxWeb: WebSessionProvider?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set here, not in the Info.plist: this call is applied at launch and
         // overrides `LSUIElement` either way. Removing the plist key alone left
@@ -132,21 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 disconnected: preferences.disconnectedIDs(among: allProviders.map(\.id)),
                 order: preferences.providerOrder
             )
-            preferences.$customEndpoints
-                .map { endpoints in
-                    endpoints.filter(\.isEnabled).map {
-                        "\($0.id):\($0.name):\($0.baseURL):\($0.apiType.rawValue):\($0.trackingUnit.rawValue):\($0.monthlyBudgetUSD ?? -1):\($0.currentSpendUSD ?? -1):\($0.monthlyBudgetTokensM ?? -1):\($0.currentTokensUsedM ?? -1):\($0.displayRemaining):\($0.showCurrency):\($0.iconPreset ?? ""):\($0.customIconFilename ?? ""):\($0.accentColorHex):\($0.selectedModel):\($0.usageSource.rawValue):\($0.usagePreset?.rawValue ?? ""):\($0.usageURL ?? ""):\($0.usageRecordsPath ?? ""):\($0.usageModelField ?? ""):\($0.usageTokenField ?? ""):\($0.usageModelFilter ?? ""):\($0.usageAuthentication.rawValue)"
-                    }
-                }
-                .removeDuplicates()
-                .receive(on: RunLoop.main)
-                .sink { [weak store] _ in
-                    let stored = Preferences.storedCustomEndpoints()
-                    let active = stored.filter(\.isEnabled)
-                    let providers: [UsageProvider] = active.map { CustomEndpointProvider(endpoint: $0) }
-                    store?.registerCustomProviders(providers)
-                }
-                .store(in: &cancellables)
             let relay = OllamaActivityRelay()
             self.ollamaRelay = relay
             // A single publisher chain exceeds Swift's type-checking time limit.
@@ -237,18 +194,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     fleet?.apply(alongOffset: 0)
                 },
                 quit: { NSApp.terminate(nil) },
-                previewResetAlert: { [weak self] in
-                    self?.previewUsageResetAlert()
-                },
-                previewSessionLimitAlert: { [weak self] in
-                    self?.previewSessionLimitAlert()
-                },
-                previewWeeklyLimitAlert: { [weak self] in
-                    self?.previewWeeklyLimitAlert()
-                },
-                sendTestNotification: { [weak self] in
-                    self?.sendTestNotification()
-                },
                 usageStore: store, ollamaRelay: relay, lmstudioMetrics: lmstudio
             )
             // The gear toggles; everything else that opens settings opens it.
@@ -292,20 +237,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             statusItem.onRefreshAll = { [weak store] in store?.refreshNow(freshness: .fromSource) }
             statusItem.onLook = { [weak store] in store?.refreshBecauseSomeoneIsLooking() }
-            // The menu's tick writes to the same preference Settings writes to,
-            // and reads nothing back of its own: the sink below carries the new
-            // value to the item, and Settings — a published property away —
-            // redraws its own switch from it in the same breath.
-            statusItem.onToggleLimits = { [weak preferences] in preferences?.showsLimitsInMenuBar = $0 }
             // Read when the menu opens, so a model's line is as current as its cell.
             statusItem.cells = { [weak fleet] in fleet?.menuModel.snapshots ?? [] }
             statusItem.activity = { [weak fleet] in fleet?.menuModel.activity(for: $0) }
-            // Handed over up front, like the notch's edge: the sink below
-            // delivers a run loop turn later, and the item would otherwise go
-            // up as one thing and then change its mind.
-            statusItem.limits = preferences.menuBarLimits
             statusItem.resetTimeFormat = preferences.resetTimeFormat
-            statusItem.showsWeeklyLimit = preferences.showsWeeklyLimitInMenuBar
 
             preferences.$appPresence
                 .receive(on: RunLoop.main)
@@ -313,28 +248,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSApp.setActivationPolicy(presence.activationPolicy)
                     if presence.wantsStatusItem { statusItem.show() } else { statusItem.hide() }
                 }
-                .store(in: &cancellables)
-
-            // What the item shows is presentation alone. It reaches the item and
-            // nothing else — no provider is read, refreshed, or switched on or
-            // off to answer it — and the item redraws from the readings it
-            // already holds, so a change in Settings lands on the bar at once.
-            Publishers.CombineLatest(preferences.$showsLimitsInMenuBar, preferences.$menuBarProviders)
-                .map { MenuBarLimits(isOn: $0, chosen: $1) }
-                .removeDuplicates()
-                // Dispatch, not the run loop: switched from the menu's own
-                // tick, this has to land while AppKit is still tracking that
-                // menu, which the run loop's default mode would hold back.
-                .receive(on: DispatchQueue.main)
-                .sink { [weak statusItem] in statusItem?.limits = $0 }
-                .store(in: &cancellables)
-
-            // Presentation only, like the parent limit switch: redraw from the
-            // current snapshots immediately and never start another fetch.
-            preferences.$showsWeeklyLimitInMenuBar
-                .removeDuplicates()
-                .receive(on: DispatchQueue.main)
-                .sink { [weak statusItem] in statusItem?.showsWeeklyLimit = $0 }
                 .store(in: &cancellables)
 
             preferences.$notchVisibility
@@ -448,22 +361,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .sink { [weak fleet] in fleet?.apply(showsNotchReadings: $0) }
                 .store(in: &cancellables)
 
-            preferences.$weeklyRingDashed
-                .receive(on: RunLoop.main)
-                .sink { [weak fleet] in fleet?.apply(weeklyRingDashed: $0) }
-                .store(in: &cancellables)
-
-            preferences.$weeklyReading
-                .receive(on: RunLoop.main)
-                .sink { [weak fleet] in fleet?.apply(weeklyReading: $0) }
-                .store(in: &cancellables)
-
-            preferences.$weeklyRing
-                .receive(on: RunLoop.main)
-                .sink { [weak fleet] in fleet?.apply(weeklyRing: $0) }
-                .store(in: &cancellables)
-
-                
             preferences.$notchSurfaceStyle
                 .receive(on: RunLoop.main)
                 .sink { [weak fleet] in fleet?.apply(surfaceStyle: $0) }
@@ -487,100 +384,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .sink { [weak store] in store?.nicknames = $0 }
                 .store(in: &cancellables)
 
-            preferences.$ollamaEndpoint
-                .receive(on: RunLoop.main)
-                .sink { [weak store] address in
-                    guard let endpoint = try? OllamaEndpoint.parse(address) else { return }
-                    store?.updateOllamaEndpoint(endpoint)
-                }
-                .store(in: &cancellables)
-
-            preferences.$lmstudioEndpoint
-                .receive(on: RunLoop.main)
-                .sink { [weak store] address in
-                    guard let endpoint = try? LMStudioEndpoint.parse(address) else { return }
-                    store?.updateLMStudioEndpoint(endpoint)
-                }
-                .store(in: &cancellables)
-
             preferences.$providerOrder
                 .receive(on: RunLoop.main)
                 .sink { [weak store] in store?.order = $0 }
                 .store(in: &cancellables)
 
-            // Redraw the Gemini API ring against the new ceiling.
-            //
-            // `dropFirst` because `@Published` publishes the value it is given
-            // at init, and a refresh there would race the store's first poll.
-            // `receive(on:)` because `@Published` emits in `willSet` — the hop
-            // to the next run loop pass is what lets the `didSet` persist the
-            // number before the provider's closure goes looking for it.
-            preferences.$geminiAPIMonthlyTokenBudget
-                .dropFirst()
-                .receive(on: RunLoop.main)
-                .sink { [weak store] _ in store?.refresh(providerID: "gemini-api") }
-                .store(in: &cancellables)
-
-            // Limit crossings become notifications here rather than inside
-            // the store: the store fetches, the notifier decides what is
-            // worth interrupting someone for, and neither needs to know the
-            // other.
-            let notifier = ThresholdNotifier(
-                isMuted: { [weak preferences] in preferences?.isMutedAlerts(for: $0) ?? false },
-                deliver: { [weak self] in self?.announceThreshold($0) }
-            )
-            self.thresholdNotifier = notifier
-
-            let resetWatcher = UsageResetWatcher(
-                isMuted: { [weak preferences] in preferences?.isMutedAlerts(for: $0) ?? false },
-                deliver: { [weak self] event in
-                    MainActor.assumeIsolated {
-                        self?.announceUsageReset(event: event)
-                    }
-                }
-            )
-            self.resetWatcher = resetWatcher
-
-            let limitWatcher = UsageLimitWatcher(
-                isMuted: { [weak preferences] in preferences?.isMutedAlerts(for: $0) ?? false },
-                deliver: { [weak self] event in
-                    MainActor.assumeIsolated {
-                        self?.announceUsageLimit(event: event)
-                    }
-                }
-            )
-            self.limitWatcher = limitWatcher
-
-            // The daily-pace window is laid over the store's snapshots here,
-            // on the way out, rather than inside a provider: it is a reading
-            // of a preference as much as of the account, and the store keeps
-            // what the vendor said. Paired with the preference so flipping the
-            // toggle redraws at once, without a fetch. The weekly-first ring
-            // is laid the same way, and for the same reasons — see `drawn`.
             store.$notchSnapshots
-                .combineLatest(preferences.$claudeDailyPaceRing, preferences.$weeklyHeadline)
                 .receive(on: RunLoop.main)
-                .sink { [weak fleet] snapshots, paced, weekly in
-                    fleet?.setSnapshots(Self.drawn(snapshots, weekly: weekly, paced: paced))
+                .sink { [weak fleet] snapshots in
+                    fleet?.setSnapshots(snapshots)
                 }
                 .store(in: &cancellables)
 
-            // Not `drawn`: the weekly-first ring is for the rings alone. The
-            // menu bar already shows the week beside the short window, under a
-            // "Weekly Limit" label that would name the session after a swap.
-            // The alert watchers track one headline per provider and tell
-            // "session" from "week" by which window leads, so a swap under them
-            // re-fires thresholds, announces a reset that did not happen, and
-            // leaves a spent session with no "available again" to follow it.
             store.$snapshots
-                .combineLatest(preferences.$claudeDailyPaceRing)
                 .receive(on: RunLoop.main)
-                .sink { [weak statusItem] snapshots, paced in
-                    let snapshots = DailyPace.apply(to: snapshots, enabled: paced)
+                .sink { [weak statusItem] snapshots in
                     statusItem?.snapshots = snapshots
-                    notifier.observe(snapshots)
-                    resetWatcher.observe(snapshots)
-                    limitWatcher.observe(snapshots)
                 }
                 .store(in: &cancellables)
             store.start()
@@ -601,7 +420,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let activity = ActivityCoordinator(monitors: [:]) { [weak self, weak fleet] id, sessions in
             guard let fleet else { return }
             fleet.setSessions(providerID: id, sessions: sessions)
-            self?.statusItem?.setActivity(providerID: id, sessions: sessions)
             self?.announceCompletions(sessions: fleet.sessions)
             self?.noteWorkState(providerID: id, sessions: sessions)
         }
@@ -647,10 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fleet.apply(accentColor: preferences.accentColor)
         fleet.apply(watchLimit: preferences.watchLimit, criticalLimit: preferences.criticalLimit)
         fleet.apply(colorTransitionStyle: preferences.colorTransitionStyle)
-        fleet.apply(weeklyRing: preferences.weeklyRing)
-        fleet.apply(weeklyRingDashed: preferences.weeklyRingDashed)
         fleet.apply(showsNotchReadings: preferences.showsNotchReadings)
-        fleet.apply(weeklyReading: preferences.weeklyReading)
         fleet.apply(foldsForFullScreen: preferences.foldsForFullScreen)
         fleet.apply(surfaceStyle: preferences.notchSurfaceStyle)
         fleet.show()
@@ -706,149 +521,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             busyProviderIDs.remove(providerID)
         }
-    }
-
-    /// A crossing is a banner on the Mac channel, as it always was; on the
-    /// notch channel it is a card beside the notch, so choosing the notch
-    /// really does keep Notification Center empty. The banner remains the
-    /// fallback for a notch that cannot show the card (hidden).
-    @MainActor
-    private func announceThreshold(_ alert: ThresholdAlert) {
-        guard let preferences, let fleet = notchFleet,
-              preferences.notificationChannel == .notch else {
-            ThresholdAlerts.deliver(alert)
-            return
-        }
-        var notice = UsageResetEvent(providerID: alert.providerID, providerName: alert.providerName,
-                                     windowLabel: alert.windowLabel, glyph: alert.glyph,
-                                     previousFraction: 0, currentFraction: Double(alert.usedPercent) / 100,
-                                     resetsAt: alert.resetsAt)
-        notice.noticeTitle = alert.threshold >= 100
-            ? L10n.t("\(alert.providerName) limit reached")
-            : L10n.t("\(alert.providerName) is at \(alert.usedPercent)%")
-        notice.noticeSubtitle = alert.windowLabel
-        notice.noticeStatus = L10n.t("\(alert.usedPercent)% used")
-        if !fleet.showResetAlert(notice, duration: 6.0) {
-            ThresholdAlerts.deliver(alert)
-        }
-    }
-
-    /// The test from Settings, on whichever channel is chosen.
-    @MainActor
-    private func sendTestNotification() {
-        guard let preferences, let fleet = notchFleet else { return }
-        guard preferences.notificationChannel == .notch else {
-            ChannelNotifications.test()
-            return
-        }
-        if preferences.sessionEndSound { SessionChime.play(preferences.sessionEndSoundName) }
-        var notice = UsageResetEvent(providerID: "sysnotch", providerName: "Sys Notch",
-                                     windowLabel: "", glyph: .ram,
-                                     previousFraction: 0, currentFraction: 0, resetsAt: nil)
-        notice.noticeTitle = L10n.t("Sys Notch test")
-        notice.noticeSubtitle = L10n.t("This is what one looks like.")
-        notice.noticeStatus = ""
-        fleet.showResetAlert(notice, duration: 5.0)
-    }
-
-    /// Open the notch and show a usage reset notification modal when a limit resets.
-    @MainActor
-    private func announceUsageReset(event: UsageResetEvent) {
-        guard let preferences, let fleet = notchFleet else { return }
-        Log.usage.info("usage reset for \(event.providerName, privacy: .public) (\(event.windowLabel, privacy: .public))")
-
-        if preferences.usageResetSound {
-            SessionChime.play(preferences.usageResetSoundName)
-        }
-        guard preferences.announceUsageReset else { return }
-        // The channel decides the form: a banner, or the notch's card with
-        // the banner only where the notch cannot show it.
-        if preferences.notificationChannel == .mac || !fleet.showResetAlert(event, duration: 5.0) {
-            UsageAlertNotifications.deliver(event)
-        }
-    }
-
-    @MainActor
-    private func previewUsageResetAlert() {
-        guard let preferences, let fleet = notchFleet else { return }
-        let demo = UsageResetEvent(
-            providerID: "system-ram",
-            providerName: "RAM",
-            windowLabel: "Memory Usage",
-            glyph: .ram,
-            previousFraction: 0.95,
-            currentFraction: 0.40,
-            resetsAt: nil
-        )
-        if preferences.usageResetSound {
-            SessionChime.play(preferences.usageResetSoundName)
-        }
-        fleet.showResetAlert(demo, duration: 5.0)
-    }
-
-    /// Open the notch and show a usage limit reached notification modal when a limit is exhausted.
-    @MainActor
-    private func announceUsageLimit(event: UsageAlertEvent) {
-        guard let preferences, let fleet = notchFleet else { return }
-
-        let isAnnounceEnabled: Bool
-        switch event.kind {
-        case .sessionLimitReached:
-            isAnnounceEnabled = preferences.announceSessionLimitReached
-        case .weeklyLimitReached:
-            isAnnounceEnabled = preferences.announceWeeklyLimitReached
-        case .reset:
-            isAnnounceEnabled = preferences.announceUsageReset
-        }
-
-        guard isAnnounceEnabled else { return }
-
-        Log.usage.info("usage limit reached for \(event.providerName, privacy: .public) (\(event.windowLabel, privacy: .public))")
-
-        if preferences.limitReachedSound {
-            SessionChime.play(preferences.limitReachedSoundName)
-        }
-        if preferences.notificationChannel == .mac || !fleet.showResetAlert(event, duration: 6.0) {
-            UsageAlertNotifications.deliver(event)
-        }
-    }
-
-    @MainActor
-    private func previewSessionLimitAlert() {
-        guard let preferences, let fleet = notchFleet else { return }
-        let demo = UsageAlertEvent(
-            kind: .sessionLimitReached,
-            providerID: "system-cpu",
-            providerName: "CPU",
-            windowLabel: "CPU Load",
-            glyph: .cpu,
-            previousFraction: 0.85,
-            currentFraction: 1.00,
-            resetsAt: nil
-        )
-        if preferences.limitReachedSound {
-            SessionChime.play(preferences.limitReachedSoundName)
-        }
-        fleet.showResetAlert(demo, duration: 6.0)
-    }
-
-    @MainActor
-    private func previewWeeklyLimitAlert() {
-        guard let preferences, let fleet = notchFleet else { return }
-        let demo = UsageAlertEvent(
-            kind: .weeklyLimitReached,
-            providerID: "system-energy",
-            providerName: "Energy",
-            windowLabel: "Battery Level",
-            glyph: .energy,
-            previousFraction: 0.20,
-            currentFraction: 0.05,
-            resetsAt: nil
-        )
-        if preferences.limitReachedSound {
-            SessionChime.play(preferences.limitReachedSoundName)
-        }
-        fleet.showResetAlert(demo, duration: 6.0)
     }
 
     /// Closing the settings window must not take the app with it.

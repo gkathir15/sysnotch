@@ -603,18 +603,6 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    func updateOllamaEndpoint(_ endpoint: URL) {
-        guard let provider = providers.first(where: { $0.id == "ollama-local" }) as? OllamaLocalProvider,
-              provider.endpoint != endpoint else { return }
-        restart(provider) { provider.endpoint = endpoint }
-    }
-
-    func updateLMStudioEndpoint(_ endpoint: URL) {
-        guard let provider = providers.first(where: { $0.id == LMStudioMetrics.providerID }) as? LMStudioLocalProvider,
-              provider.endpoint != endpoint else { return }
-        restart(provider) { provider.endpoint = endpoint }
-    }
-
     /// A changed address makes whatever the old one was about to answer
     /// untrue; the reading is cleared and the new address asked at once.
     private func restart(_ provider: UsageProvider, applying change: () -> Void) {

@@ -164,42 +164,88 @@ struct GlyphShape: Shape {
     }
 }
 
-struct SpiderShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let midX = rect.midX
-        let midY = rect.midY
-        let w = rect.width
-        let h = rect.height
+/// A wireframe globe turning on its own axis.
+///
+/// The old mark was a flat `globe` symbol with a 3D flip on it, which reads as
+/// a card being turned edge-on and then vanishing. This draws an orthographic
+/// sphere instead: latitude rings stay put while the meridians sweep across the
+/// face, so the mark is recognisably a globe at every frame, including the one
+/// where it is seen straight on.
+private struct SpinningGlobe: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-        // Abdomen & Cephalothorax
-        let abdomenRect = CGRect(x: midX - w * 0.16, y: midY - h * 0.05, width: w * 0.32, height: h * 0.36)
-        path.addEllipse(in: abdomenRect)
+    private let meridianCount = 12
+    private let turnSeconds: Double = 9
 
-        let headRect = CGRect(x: midX - w * 0.11, y: midY - h * 0.28, width: w * 0.22, height: h * 0.20)
-        path.addEllipse(in: headRect)
-
-        // 8 Curved Legs
-        let legOffsets: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            (-0.08, -0.20, -0.40, -0.42),
-            (-0.10, -0.12, -0.46, -0.20),
-            (-0.10, -0.02, -0.46, 0.12),
-            (-0.08, 0.08, -0.40, 0.36)
-        ]
-
-        for (sx, sy, kx, ky) in legOffsets {
-            // Left leg
-            path.move(to: CGPoint(x: midX + sx * w, y: midY + sy * h))
-            path.addLine(to: CGPoint(x: midX + kx * w, y: midY + ky * h))
-            path.addLine(to: CGPoint(x: midX + (kx - 0.04) * w, y: midY + (ky + 0.10) * h))
-
-            // Right leg
-            path.move(to: CGPoint(x: midX - sx * w, y: midY + sy * h))
-            path.addLine(to: CGPoint(x: midX - kx * w, y: midY + ky * h))
-            path.addLine(to: CGPoint(x: midX - (kx - 0.04) * w, y: midY + (ky + 0.10) * h))
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
+            Canvas { context, size in
+                draw(in: &context, size: size, phase: phase(at: timeline.date))
+            }
         }
+    }
 
-        return path
+    private func phase(at date: Date) -> Double {
+        guard !reduceMotion else { return 0.7 }
+        let turn = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: turnSeconds)
+        return turn / turnSeconds * 2 * .pi
+    }
+
+    private func draw(in context: inout GraphicsContext, size: CGSize, phase: Double) {
+        let radius = min(size.width, size.height) / 2
+        guard radius > 0 else { return }
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let lineWidth = max(0.7, radius * 0.065)
+        let sphereRect = CGRect(x: center.x - radius, y: center.y - radius,
+                                width: radius * 2, height: radius * 2)
+        let sphere = Path(ellipseIn: sphereRect)
+
+        // A soft light from the upper left makes the outline read as a volume
+        // rather than as a circle full of grid lines.
+        context.fill(sphere, with: .radialGradient(
+            Gradient(colors: [Color.primary.opacity(0.24), Color.primary.opacity(0.03)]),
+            center: CGPoint(x: center.x - radius * 0.38, y: center.y - radius * 0.38),
+            startRadius: 0,
+            endRadius: radius * 1.35
+        ))
+        context.stroke(sphere, with: .color(Color.primary.opacity(0.95)), lineWidth: lineWidth)
+
+        context.drawLayer { layer in
+            layer.clip(to: sphere)
+
+            for latitude in stride(from: -60.0, through: 60.0, by: 30.0) {
+                let angle = latitude * .pi / 180
+                let y = center.y + radius * sin(angle)
+                let halfWidth = radius * cos(angle)
+                var line = Path()
+                line.move(to: CGPoint(x: center.x - halfWidth, y: y))
+                line.addLine(to: CGPoint(x: center.x + halfWidth, y: y))
+                layer.stroke(line, with: .color(Color.primary.opacity(latitude == 0 ? 0.55 : 0.30)),
+                             lineWidth: lineWidth * 0.75)
+            }
+
+            for index in 0..<meridianCount {
+                let longitude = Double(index) / Double(meridianCount) * 2 * .pi + phase
+                let facing = cos(longitude)
+                guard facing > 0 else { continue }
+                let halfWidth = radius * abs(sin(longitude))
+                let opacity = 0.18 + 0.62 * facing
+                let meridian: Path
+                if halfWidth < 0.5 {
+                    var line = Path()
+                    line.move(to: CGPoint(x: center.x, y: center.y - radius))
+                    line.addLine(to: CGPoint(x: center.x, y: center.y + radius))
+                    meridian = line
+                } else {
+                    meridian = Path(ellipseIn: CGRect(x: center.x - halfWidth,
+                                                      y: center.y - radius,
+                                                      width: halfWidth * 2,
+                                                      height: radius * 2))
+                }
+                layer.stroke(meridian, with: .color(Color.primary.opacity(opacity)),
+                             lineWidth: lineWidth * 0.8)
+            }
+        }
     }
 }
 
@@ -207,11 +253,34 @@ struct ProviderGlyphView: View {
     let glyph: ProviderGlyph
     var customIconFilename: String? = nil
     var size: CGFloat = Design.px(46)
+    /// The metric's own reading, 0–1, for the glyphs whose colour carries the
+    /// number: the battery bolt and the thermal thermometer. Nil leaves them
+    /// in the ordinary foreground colour, as in Settings where no reading is
+    /// being drawn beside the mark.
+    var level: Double? = nil
 
     @State private var fanDegrees: Double = 0
-    @State private var globeAngle: Double = 0
-    @State private var thermometerOffset: CGFloat = 0
-    @State private var gradientOffset: CGFloat = 0
+
+    /// Green, yellow or red, whichever the reading means.
+    private var levelTint: Color? {
+        guard let level, level.isFinite else { return nil }
+        let value = min(max(level, 0), 1)
+        switch glyph {
+        case .energy:
+            // A battery is good when it is full, unlike a quota.
+            if value >= 0.50 { return Palette.ample }
+            if value >= 0.20 { return Palette.watch }
+            return Palette.critical
+        case .thermals:
+            // Thermal pressure is good when it is low: nominal/fair stay green,
+            // serious is yellow, critical is red.
+            if value < 0.50 { return Palette.ample }
+            if value < 0.75 { return Palette.watch }
+            return Palette.critical
+        default:
+            return nil
+        }
+    }
 
     var body: some View {
         Group {
@@ -220,13 +289,6 @@ struct ProviderGlyphView: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFit()
-            } else if glyph == .ram {
-                ZStack {
-                    SpiderShape()
-                        .stroke(Palette.textPrimary, lineWidth: 1.8)
-                    SpiderShape()
-                        .fill(Palette.textPrimary)
-                }
             } else if glyph == .fan {
                 Image(systemName: "fanblades.fill")
                     .renderingMode(.template)
@@ -239,49 +301,25 @@ struct ProviderGlyphView: View {
                         }
                     }
             } else if glyph == .cpu {
-                Image(systemName: "cpu")
+                Image(systemName: "cpu.fill")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .overlay(
-                        LinearGradient(
-                            colors: [Color.green, Color.red, Color.green],
-                            startPoint: UnitPoint(x: 0 - gradientOffset, y: 0),
-                            endPoint: UnitPoint(x: 1 + gradientOffset, y: 1)
-                        )
-                        .mask(
-                            Image(systemName: "cpu")
-                                .resizable()
-                                .scaledToFit()
-                        )
-                    )
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                            gradientOffset = 0.8
-                        }
-                    }
             } else if glyph == .network {
-                Image(systemName: "globe")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .rotation3DEffect(.degrees(globeAngle), axis: (x: 0, y: 1, z: 0))
-                    .onAppear {
-                        withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
-                            globeAngle = 360
-                        }
-                    }
+                SpinningGlobe()
             } else if glyph == .thermals {
                 Image(systemName: "thermometer.medium")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .offset(y: thermometerOffset)
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                            thermometerOffset = -3
-                        }
-                    }
+                    .foregroundStyle(levelTint ?? Palette.textPrimary)
+            } else if glyph == .energy {
+                Image(systemName: "bolt.fill")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(levelTint ?? Palette.textPrimary)
+                    .shadow(color: (levelTint ?? .clear).opacity(0.55), radius: size * 0.10)
             } else if let systemSymbol = glyph.systemSymbolName {
                 Image(systemName: systemSymbol)
                     .renderingMode(.template)

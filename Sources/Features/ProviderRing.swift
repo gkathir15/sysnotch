@@ -26,11 +26,6 @@ struct ProviderRing: View {
     /// A local model's arc: how full its context was on the last request. Nil
     /// draws the whole ring, which is what a runtime that does not say gets.
     var localContextFraction: Double?
-    /// The weekly limit, when the provider has one. Nil is the ordinary case
-    /// for a provider with a single window, and draws nothing.
-    var weeklyFraction: Double?
-    /// Where the user asked for it, if at all.
-    var weeklyRing: WeeklyRing = .off
     var bandOverride: UsageBand? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -39,7 +34,6 @@ struct ProviderRing: View {
     @Environment(\.usageCriticalLimit) private var criticalLimit
     @Environment(\.colorTransitionStyle) private var colorTransitionStyle
     @Environment(\.codenotchAccentColor) private var accentColor
-    @Environment(\.weeklyRingDashed) private var weeklyRingDashed
     @State private var spin: Double = 0
 
     private var band: UsageBand {
@@ -68,25 +62,6 @@ struct ProviderRing: View {
             return band.color(accent: accentColor)
         }
         return UsageBand.rampColor(for: usedFraction ?? 0, watchLimit: watchLimit, accent: accentColor)
-    }
-
-    private var weeklyBand: UsageBand {
-        isBlocked ? .exhausted : UsageBand.band(for: weeklyFraction ?? 0, watchLimit: watchLimit, criticalLimit: criticalLimit)
-    }
-    private var weeklySweep: CGFloat { CGFloat(min(max(weeklyFraction ?? 0, 0), 1)) }
-    /// Same fallback rule as `primaryRingColor`, minus `bandOverride` — the weekly ring has none.
-    private var weeklyRingColor: Color {
-        guard !isBlocked, colorTransitionStyle == .ramp else { return weeklyBand.color(accent: accentColor) }
-        return UsageBand.rampColor(for: weeklyFraction ?? 0, watchLimit: watchLimit, accent: accentColor)
-    }
-
-    /// Inside, the weekly ring and the working indicator want the same band —
-    /// 1.03pt apart, one of them spinning. Rather than shave both until neither
-    /// is legible, the transient one wins: while a provider is working that is
-    /// the more urgent fact, and the week is still a hover away. Outside there
-    /// is no contest, so nothing is given up there.
-    private var isWorking: Bool {
-        weeklyRing == .inside && activity != nil && activity?.state != .idle
     }
 
     var body: some View {
@@ -135,47 +110,8 @@ struct ProviderRing: View {
                         .animation(NotchMotion.reading, value: band)
                 }
 
-                // The weekly limit, when there is one and it has been asked
-                // for. Same start and direction as the headline arc, so the
-                // two are read the same way round; thinner and at its own
-                // radius, so which is which never has to be worked out.
-                //
-                // It carries its own band colour rather than borrowing the
-                // headline's: a session at 12% beside a week at 91% is exactly
-                // the case this exists for, and painting them the same colour
-                // would hide it. Held slightly back in opacity so the headline
-                // stays the one the eye lands on first.
-                if let radius = weeklyRing.radius, weeklyFraction != nil, !isWorking {
-                    let inset = NotchLayout.ringDiameter / 2 - radius
-
-                    // A track of its own, for the same reason the headline has
-                    // one: a week nobody has spent yet draws an arc of zero
-                    // length, and without something behind it that is
-                    // indistinguishable from the feature being broken. Codex
-                    // opened its week at 0% and read as missing.
-                    Circle()
-                        .inset(by: inset)
-                        .stroke(Palette.ringTrack,
-                                style: StrokeStyle(lineWidth: NotchLayout.weeklyRingStroke,
-                                                   dash: weeklyRingDashed ? [4, 2] : []))
-                        .opacity(reduceTransparency ? 1 : 0.7)
-
-                    Circle()
-                        .inset(by: inset)
-                        .trim(from: 0, to: weeklySweep)
-                        .stroke(
-                            weeklyRingColor,
-                            style: StrokeStyle(lineWidth: NotchLayout.weeklyRingStroke,
-                                               lineCap: weeklyRingDashed ? .butt : .round,
-                                               dash: weeklyRingDashed ? [4, 2] : [])
-                        )
-                        .opacity(reduceTransparency ? 1 : 0.8)
-                        .rotationEffect(.degrees(-90))
-                        .animation(NotchMotion.reading, value: weeklySweep)
-                        .animation(NotchMotion.reading, value: weeklyBand)
-                }
-
-                ProviderGlyphView(glyph: glyph, customIconFilename: customIconFilename)
+                ProviderGlyphView(glyph: glyph, customIconFilename: customIconFilename,
+                                  level: glyph == .energy || glyph == .thermals ? usedFraction : nil)
                     .foregroundStyle(Palette.textPrimary)
                     // A spent limit dims its glyph so the ring reads as "waiting".
                     // Under reduce-transparency, boost opacity so it stays legible without low alpha.
@@ -281,9 +217,6 @@ struct ProviderCell: View {
     let snapshot: ProviderSnapshot
     var activity: ActivitySummary?
     var isRefreshing: Bool = false
-    var weeklyRing: WeeklyRing = .off
-    /// Whether the reading adds the weekly ring's percentage, as "30%/70%".
-    var showsWeeklyReading: Bool = false
     /// Whether the percentage is drawn under the ring.
     ///
     /// Off where the cell sits in a menu-bar strip beside the hardware notch:
@@ -293,8 +226,7 @@ struct ProviderCell: View {
     var showsReading: Bool = true
 
     private var reading: ProviderReading {
-        ProviderReading(snapshot: snapshot, weeklyRing: weeklyRing,
-                        showsWeeklyReading: showsWeeklyReading)
+        ProviderReading(snapshot: snapshot)
     }
 
     private var readingText: String { reading.text }
@@ -311,8 +243,6 @@ struct ProviderCell: View {
                 isRefreshing: isRefreshing,
                 localPerformance: snapshot.localPerformance,
                 localContextFraction: snapshot.localContextFraction,
-                weeklyFraction: snapshot.hasReading ? snapshot.weeklyFraction : nil,
-                weeklyRing: weeklyRing,
                 bandOverride: snapshot.bandOverride
             )
             if showsReading { reading }
@@ -340,17 +270,6 @@ struct ProviderCell: View {
         guard let ledger = snapshot.localLedger else { return "" }
         let context = snapshot.localContextFraction.map { ", Context \(Percent.text(for: $0))% full" } ?? ""
         return "\(context), Tokens today \(ledger.tokensTodayText), \(ledger.requestsTodayText) requests"
-    }
-}
-
-private struct WeeklyRingDashedKey: EnvironmentKey {
-    static let defaultValue: Bool = false
-}
-
-extension EnvironmentValues {
-    var weeklyRingDashed: Bool {
-        get { self[WeeklyRingDashedKey.self] }
-        set { self[WeeklyRingDashedKey.self] = newValue }
     }
 }
 
@@ -471,9 +390,6 @@ final class SpinningArcView: NSView {
 /// where the notch widens with nothing else to carry.
 struct ProviderReading: View {
     let snapshot: ProviderSnapshot
-    var weeklyRing: WeeklyRing = .off
-    /// Whether the reading adds the weekly ring's percentage, as "30%/70%".
-    var showsWeeklyReading: Bool = false
     /// Drawn on its own across the Mac's notch rather than under the ring: the
     /// larger size, and no more room along the bar than `width`.
     var across: CGFloat? = nil
@@ -483,38 +399,20 @@ struct ProviderReading: View {
     /// A dash, not "0%": nothing read is not the same as nothing used.
     var text: String {
         guard snapshot.hasReading else { return "—" }
-        guard let weekly = weeklyReading else { return snapshot.headlineText }
-        return "\(snapshot.headlineText)/\(Percent.text(for: weekly))%"
+        return snapshot.headlineText
     }
-
-    /// What the weekly ring draws, when it and its reading are on. The pair
-    /// mirrors the two rings, so with the weekly limit as the main ring or the
-    /// daily pace ring the second number is the session, as the thin ring is.
-    ///
-    /// Only after a percentage: a count or a cost with a percentage after it
-    /// would read as one quantity, and it is not.
-    private var weeklyReading: Double? {
-        guard showsWeeklyReading, weeklyRing != .off, snapshot.localModel == nil,
-              snapshot.usedFraction != nil, snapshot.headline?.prefersUsedText != true
-        else { return nil }
-        return snapshot.weeklyFraction
-    }
-
-    /// Whether it reads as the pair, "30%/70%".
-    var isPair: Bool { snapshot.hasReading && weeklyReading != nil }
 
     /// How wide it is drawn across the Mac's notch, in design points — what
     /// the side carrying it is sized to.
     var acrossWidth: CGFloat {
-        let size = isPair ? Typography.percentPairAcrossSize : Typography.percentAcrossSize
-        let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: Typography.percentAcrossSize, weight: .semibold)
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
     var body: some View {
         if let width = across {
             Text(text)
-                .font(isPair ? Typography.percentPairAcross : Typography.percentAcross)
+                .font(Typography.percentAcross)
                 .monospacedDigit()
                 .foregroundStyle(snapshot.showsLocalPerformance && snapshot.localPerformance == nil
                                  ? Palette.textSecondary : Palette.textPrimary)
@@ -531,7 +429,7 @@ struct ProviderReading: View {
 
     private var underTheRing: some View {
         Text(text)
-            .font(snapshot.hasReading && weeklyReading != nil ? Typography.percentPair : Typography.percent)
+            .font(Typography.percent)
             .foregroundStyle(snapshot.showsLocalPerformance && snapshot.localPerformance == nil
                              ? Palette.textSecondary : Palette.textPrimary)
             // Keep local speeds inside the ring's column so longer units

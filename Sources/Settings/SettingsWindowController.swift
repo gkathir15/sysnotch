@@ -25,10 +25,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let usageStore: UsageStore?
     private let resetPosition: () -> Void
     private let quit: () -> Void
-    private let previewResetAlert: (() -> Void)?
-    private let previewSessionLimitAlert: (() -> Void)?
-    private let previewWeeklyLimitAlert: (() -> Void)?
-    private let sendTestNotification: (() -> Void)?
 
     init(preferences: Preferences,
          providers: @escaping () -> [ProviderSummary],
@@ -38,10 +34,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
          retry: @escaping (String) -> Void,
          resetPosition: @escaping () -> Void,
          quit: @escaping () -> Void,
-         previewResetAlert: (() -> Void)? = nil,
-         previewSessionLimitAlert: (() -> Void)? = nil,
-         previewWeeklyLimitAlert: (() -> Void)? = nil,
-         sendTestNotification: (() -> Void)? = nil,
          usageStore: UsageStore? = nil,
          ollamaRelay: OllamaActivityRelay? = nil,
          lmstudioMetrics: LMStudioMetrics? = nil) {
@@ -50,10 +42,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         self.usageStore = usageStore
         self.resetPosition = resetPosition
         self.quit = quit
-        self.previewResetAlert = previewResetAlert
-        self.previewSessionLimitAlert = previewSessionLimitAlert
-        self.previewWeeklyLimitAlert = previewWeeklyLimitAlert
-        self.sendTestNotification = sendTestNotification
         self.switchAccount = switchAccount
         self.retry = retry
         self.preferences = preferences
@@ -258,11 +246,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                                    resetPosition: resetPosition,
                                    quit: quit,
                                    ollamaRelay: ollamaRelay, lmstudioMetrics: lmstudioMetrics,
-                                   usageStore: usageStore,
-                                   previewResetAlert: previewResetAlert,
-                                   previewSessionLimitAlert: previewSessionLimitAlert,
-                                   previewWeeklyLimitAlert: previewWeeklyLimitAlert,
-                                   sendTestNotification: sendTestNotification)
+                                   usageStore: usageStore)
         )
         window.center()
         window.isReleasedWhenClosed = false

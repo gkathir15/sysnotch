@@ -79,13 +79,6 @@ final class NotchViewModel: ObservableObject {
     @Published var now: Date = Date()
     @Published var resetTimeFormat: ResetTimeFormat = .automatic
 
-    /// Active usage reset notification event to present beside the notch.
-    @Published var activeResetAlert: UsageResetEvent?
-
-    func resetAlertIndex(for event: UsageResetEvent) -> Int? {
-        snapshots.firstIndex { $0.id == event.providerID }
-    }
-
     /// Whether the notch is open or folded away to its pill.
     @Published var isExpanded = false
     /// Clicked open, so it stays open until clicked shut again. A gesture,
@@ -194,12 +187,9 @@ final class NotchViewModel: ObservableObject {
     /// Mirrors the persisted Appearance choice so the separate notch window
     /// redraws immediately when Settings changes it.
     @Published var accentColor: AccentColorChoice = .system
-    /// Whether a provider's weekly limit gets a ring of its own, and where.
-    /// Mirrored here for the same reason `accentColor` is: the notch is a
-    /// separate window, and it has to redraw the moment Settings changes this.
-    @Published var weeklyRing: WeeklyRing = .off
-    @Published var weeklyRingDashed: Bool = false
-    @Published var weeklyReading: Bool = false
+    /// The ring thresholds mirrored from Settings, for the same reason
+    /// `accentColor` is: the notch is a separate window and has to redraw the
+    /// moment either slider moves.
     @Published var watchLimit: Double = 0.50
     @Published var criticalLimit: Double = 0.70
     /// Mirrored from Settings like `surfaceStyle`, just below.
@@ -878,8 +868,7 @@ final class NotchViewModel: ObservableObject {
     /// The width of the percentage across the Mac's notch, in design points.
     var readingAcrossTextWidth: CGFloat {
         guard let snapshot = snapshots.first else { return 0 }
-        return ProviderReading(snapshot: snapshot, weeklyRing: weeklyRing,
-                               showsWeeklyReading: weeklyReading).acrossWidth
+        return ProviderReading(snapshot: snapshot).acrossWidth
     }
 
     /// **How long the side carrying it needs to be**, in design points: out of

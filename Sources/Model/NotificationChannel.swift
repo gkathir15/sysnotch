@@ -57,30 +57,6 @@ enum ChannelNotifications {
         }
     }
 
-    /// A banner; or, when banners are switched off for Sys Notch in System
-    /// Settings, that pane, because a test that shows nothing and says
-    /// nothing reads as broken.
-    static func test() {
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
-            switch settings.authorizationStatus {
-            case .notDetermined:
-                center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
-                    if ok { post(title: L10n.t("Sys Notch test"), body: L10n.t("This is what one looks like.")) }
-                }
-            case .denied:
-                DispatchQueue.main.async {
-                    let id = Bundle.main.bundleIdentifier ?? "com.vinz.codenotch"
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
-            default:
-                post(title: L10n.t("Sys Notch test"), body: L10n.t("This is what one looks like."))
-            }
-        }
-    }
-
     static func sessionEnded(name: String, blocked: Bool) {
         post(title: blocked ? L10n.t("\(name) is waiting on you") : L10n.t("\(name) finished"),
              body: blocked ? L10n.t("The agent stopped to ask you something.") : L10n.t("The agent's turn is done."),

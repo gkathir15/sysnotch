@@ -6,7 +6,6 @@ import os
 /// What the user has chosen, kept in `UserDefaults`.
 @MainActor
 final class Preferences: ObservableObject {
-    static let showUsagePaceKey = "showUsagePace"
 
     /// Provider IDs that currently have a ring. Stored as the ones that are
     /// on, so a provider added later stays off until someone switches it on —
@@ -45,22 +44,6 @@ final class Preferences: ObservableObject {
     /// settings name, so a server moved off 1234 is found without typing.
     @Published var lmstudioEndpoint: String {
         didSet { defaults.set(lmstudioEndpoint, forKey: Keys.lmstudioEndpoint) }
-    }
-
-    /// User-configured custom OpenAI-compatible endpoints.
-    @Published var customEndpoints: [CustomEndpoint] {
-        didSet {
-            if let data = try? JSONEncoder().encode(customEndpoints) {
-                defaults.set(data, forKey: Keys.customEndpoints)
-            }
-        }
-    }
-
-    /// Providers whose threshold alerts are muted. Stored as the muted set so
-    /// a provider added later alerts by default. Connection is stored the
-    /// other way: the ones that are on.
-    @Published var mutedAlertProviders: Set<String> {
-        didSet { defaults.set(Array(mutedAlertProviders), forKey: Keys.mutedAlerts) }
     }
 
     /// Names given to accounts in Settings, by provider id. Only the ones
@@ -193,10 +176,6 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(resetTimeFormat.rawValue, forKey: Keys.resetTimeFormat) }
     }
 
-    @Published var showUsagePace: Bool {
-        didSet { defaults.set(showUsagePace, forKey: Self.showUsagePaceKey) }
-    }
-
     /// Whether pointing at a ring, or opening the menu bar's menu, refuses every
     /// reading a provider is holding and asks the provider itself.
     ///
@@ -210,25 +189,6 @@ final class Preferences: ObservableObject {
     /// not worth making everybody pay for.
     @Published var asksProviderOnLook: Bool {
         didSet { defaults.set(asksProviderOnLook, forKey: Keys.asksProviderOnLook) }
-    }
-
-    /// Whether Claude's big ring shows the day's share of the weekly limit
-    /// instead of the session. See `DailyPace`.
-    @Published var claudeDailyPaceRing: Bool {
-        didSet { defaults.set(claudeDailyPaceRing, forKey: Keys.claudeDailyPaceRing) }
-    }
-
-    /// Whether the big ring shows the weekly limit instead of the shorter
-    /// window, for every provider that has both. See `WeeklyHeadline`.
-    @Published var weeklyHeadline: Bool {
-        didSet { defaults.set(weeklyHeadline, forKey: Keys.weeklyHeadline) }
-    }
-
-    /// Whether Spark and code-review Codex windows appear in the hover card.
-    /// On by default so a first launch shows them; the ring still follows
-    /// the main Codex window either way.
-    @Published var showCodexExtraLimits: Bool {
-        didSet { defaults.set(showCodexExtraLimits, forKey: Keys.showCodexExtraLimits) }
     }
 
     /// Whether DeepSeek's current peak/off-peak billing phase is shown in its
@@ -257,7 +217,6 @@ final class Preferences: ObservableObject {
         deepSeekPricingSchedule = .current
     }
 
-    /// Whether the weekly limit gets a ring of its own, and where it sits.
     /// Whether each ring carries its percentage under it, on every edge.
     ///
     /// On by default, which is what the notch has always drawn everywhere but
@@ -267,21 +226,6 @@ final class Preferences: ObservableObject {
     @Published var showsNotchReadings: Bool {
         didSet { defaults.set(showsNotchReadings, forKey: Keys.showsNotchReadings) }
     }
-
-    @Published var weeklyRingDashed: Bool {
-        didSet { defaults.set(weeklyRingDashed, forKey: Keys.weeklyRingDashed) }
-    }
-
-    /// Whether the reading under each ring adds the weekly ring's percentage,
-    /// as "30%/70%". Only while the weekly ring is on.
-    @Published var weeklyReading: Bool {
-        didSet { defaults.set(weeklyReading, forKey: Keys.weeklyReading) }
-    }
-
-    @Published var weeklyRing: WeeklyRing {
-        didSet { defaults.set(weeklyRing.rawValue, forKey: Keys.weeklyRing) }
-    }
-
 
     /// The colour used for positive usage and active-work indicators.
     @Published var accentColor: AccentColorChoice {
@@ -333,46 +277,6 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(notificationChannel.rawValue, forKey: Keys.notificationChannel) }
     }
 
-    /// Whether the menu bar item shows five-hour limits instead of its icon.
-    ///
-    /// Off unless switched on. The item is the way into an app that has left
-    /// the Dock, and an update that swapped it for a readout several times as
-    /// wide — pushing everything beside it along, and on a notched MacBook
-    /// perhaps off the bar altogether — would be a change nobody asked for.
-    @Published var showsLimitsInMenuBar: Bool {
-        didSet { defaults.set(showsLimitsInMenuBar, forKey: Keys.showsLimitsInMenuBar) }
-    }
-
-    /// Whether providers with a weekly allowance add its compact ring to the
-    /// existing limit readout. Off by default so upgrades keep the exact menu
-    /// bar width and appearance they had before this setting existed.
-    @Published var showsWeeklyLimitInMenuBar: Bool {
-        didSet { defaults.set(showsWeeklyLimitInMenuBar, forKey: Keys.showsWeeklyLimitInMenuBar) }
-    }
-
-    /// The providers the menu bar summarises when it does, as ids. Nil until
-    /// the first choice — see `MenuBarLimits` for what that reads as. From
-    /// then on it is the ones that are on, so a provider that turns up later
-    /// stays out of the bar until someone puts it there.
-    ///
-    /// Never written alongside `connectedProviders`: one is what the menu bar
-    /// shows, the other what Sys Notch reads, and `MenuBarLimits` says why the
-    /// two stay apart.
-    @Published private(set) var menuBarProviders: Set<String>? {
-        didSet {
-            if let menuBarProviders {
-                defaults.set(menuBarProviders.sorted(), forKey: Keys.menuBarProviders)
-            } else {
-                defaults.removeObject(forKey: Keys.menuBarProviders)
-            }
-        }
-    }
-
-    /// Both halves of the menu bar choice, the way the status item takes them.
-    var menuBarLimits: MenuBarLimits {
-        MenuBarLimits(isOn: showsLimitsInMenuBar, chosen: menuBarProviders)
-    }
-
     /// Open the notch for a few seconds when an agent stops working.
     ///
     /// On by default: the app already knows the moment a session ends, and a
@@ -412,71 +316,6 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(sessionBlockedSoundName, forKey: Keys.sessionBlockedSoundName) }
     }
 
-    /// Show a notification modal from the notch when a provider's limit resets.
-    @Published var announceUsageReset: Bool {
-        didSet { defaults.set(announceUsageReset, forKey: Keys.announceUsageReset) }
-    }
-
-    /// Sound an alert alongside the usage reset notification modal.
-    @Published var usageResetSound: Bool {
-        didSet { defaults.set(usageResetSound, forKey: Keys.usageResetSound) }
-    }
-
-    /// Which sound a usage reset notification makes.
-    @Published var usageResetSoundName: String {
-        didSet { defaults.set(usageResetSoundName, forKey: Keys.usageResetSoundName) }
-    }
-
-    /// Show a notification modal from the notch when a provider's session limit is reached.
-    @Published var announceSessionLimitReached: Bool {
-        didSet { defaults.set(announceSessionLimitReached, forKey: Keys.announceSessionLimitReached) }
-    }
-
-    /// Show a notification modal from the notch when a provider's weekly limit is reached.
-    @Published var announceWeeklyLimitReached: Bool {
-        didSet { defaults.set(announceWeeklyLimitReached, forKey: Keys.announceWeeklyLimitReached) }
-    }
-
-    /// Sound an alert alongside the limit reached notification modal.
-    @Published var limitReachedSound: Bool {
-        didSet { defaults.set(limitReachedSound, forKey: Keys.limitReachedSound) }
-    }
-
-    /// Which sound a limit reached notification makes.
-    @Published var limitReachedSoundName: String {
-        didSet { defaults.set(limitReachedSoundName, forKey: Keys.limitReachedSoundName) }
-    }
-
-    /// The ceiling the Gemini API ring fills against, counted in tokens.
-    ///
-    /// In tokens rather than money because a bare `GEMINI_API_KEY` publishes no
-    /// limit of any kind — there is nothing to read, so the ceiling has to come
-    /// from the user — and because prices change under the app while a token
-    /// stays a token. `nil` means no ceiling, which is the honest default: the
-    /// key is billed per token with no cap.
-    @Published var geminiAPIMonthlyTokenBudget: Int? {
-        didSet {
-            if let budget = geminiAPIMonthlyTokenBudget, budget > 0 {
-                defaults.set(budget, forKey: Keys.geminiAPIMonthlyTokenBudget)
-            } else {
-                defaults.removeObject(forKey: Keys.geminiAPIMonthlyTokenBudget)
-            }
-        }
-    }
-
-    @Published var qoderRegion: Sites.QoderRegion {
-        didSet { defaults.set(qoderRegion.rawValue, forKey: Keys.qoderRegion) }
-    }
-
-    /// Which MiniMax console the Coding Plan is read from.
-    ///
-    /// International and China mainland are different hosts, and a key issued
-    /// on one is refused by the other. Absent means never chosen, which is
-    /// international.
-    @Published var minimaxRegion: MiniMaxRegion {
-        didSet { defaults.set(minimaxRegion.rawValue, forKey: Keys.minimaxRegion) }
-    }
-
     /// The version whose changes have already been shown.
     ///
     /// Written when the What's New dialogue is dismissed rather than when it
@@ -510,16 +349,12 @@ final class Preferences: ObservableObject {
         static let introducedOllama = "introducedOllama"
         static let migratedOllamaID = "migratedOllamaLocalID"
         static let ollamaMetricsEnabled = "ollamaMetricsEnabled"
-        static let mutedAlerts = "mutedAlertProviders"
         static let accountNicknames = "accountNicknames"
         static let hasLaunched = "hasLaunchedBefore"
         static let visibility = "notchVisibility"
         static let foldsForFullScreen = "foldsForFullScreen"
         static let presence = "appPresence"
         static let notificationChannel = "notificationChannel"
-        static let showsLimitsInMenuBar = "showsLimitsInMenuBar"
-        static let showsWeeklyLimitInMenuBar = "showsWeeklyLimitInMenuBar"
-        static let menuBarProviders = "menuBarProviders"
         static let edge = "notchEdge"
         // A new key, so there is nothing under the old app name to migrate.
         static let size = "notchSize"
@@ -531,17 +366,11 @@ final class Preferences: ObservableObject {
         static let scope = "notchScope"
         static let accentColor = "accentColor"
         // A new key, so there is nothing under the old app name to migrate.
-        static let weeklyRing = "weeklyRing"
-        static let weeklyRingDashed = "weeklyRingDashed"
         static let showsNotchReadings = "showsNotchReadings"
-        static let weeklyReading = "weeklyReading"
-        static let claudeDailyPaceRing = "claudeDailyPaceRing"
-        static let weeklyHeadline = "weeklyHeadline"
         static let notchSurfaceStyle = "notchSurfaceStyle"
         static let watchLimit = "watchLimit"
         static let criticalLimit = "criticalLimit"
         static let colorTransitionStyle = "colorTransitionStyle"
-        static let customEndpoints = "customEndpoints"
         static let lastSeenVersion = "lastSeenVersion"
         static let order = "providerOrder"
         static let announceSessionEnd = "announceSessionEnd"
@@ -549,38 +378,24 @@ final class Preferences: ObservableObject {
         static let peekDuration = "peekDuration"
         static let sessionEndSoundName = "sessionEndSoundName"
         static let sessionBlockedSoundName = "sessionBlockedSoundName"
-        static let announceUsageReset = "announceUsageReset"
-        static let usageResetSound = "usageResetSound"
-        static let usageResetSoundName = "usageResetSoundName"
-        static let announceSessionLimitReached = "announceSessionLimitReached"
-        static let announceWeeklyLimitReached = "announceWeeklyLimitReached"
-        static let limitReachedSound = "limitReachedSound"
-        static let limitReachedSoundName = "limitReachedSoundName"
         /// A new key, so there is nothing under the old app name to migrate.
-        static let geminiAPIMonthlyTokenBudget = "geminiAPIMonthlyTokenBudget"
-        static let minimaxRegion = "minimaxRegion"
-        static let qoderRegion = "qoderRegion"
         static let antigravityHeadlineLimit = "antigravityHeadlineLimit"
         static let antigravityHeadlineModel = "antigravityHeadlineModel"
+        static let showCodexExtraLimits = "showCodexExtraLimits"
         static let deepSeekPricingEnabled = "deepSeekPricingEnabled"
         static let deepSeekPricingSchedule = "deepSeekPricingSchedule"
-        static let showCodexExtraLimits = "showCodexExtraLimits"
     }
 
     /// The budget read straight from disk, off the main actor.
     ///
     /// The Gemini API provider is an actor and asks for this on every fetch, and
     /// `@Published` state is main-actor-isolated where `UserDefaults` is
-    /// thread-safe — so the provider reads the store, not the object.
-    nonisolated static func storedGeminiAPIMonthlyTokenBudget(
+    nonisolated static func storedShowCodexExtraLimits(
         defaults: UserDefaults = .standard
-    ) -> Int? {
-        guard let budget = defaults.object(forKey: Keys.geminiAPIMonthlyTokenBudget) as? Int,
-              budget > 0
-        else { return nil }
-        return budget
+    ) -> Bool {
+        defaults.object(forKey: Keys.showCodexExtraLimits) as? Bool ?? true
     }
-    
+
     nonisolated static func storedAntigravityHeadlineLimit(
         defaults: UserDefaults = .standard
     ) -> AntigravityHeadlineLimit {
@@ -599,90 +414,10 @@ final class Preferences: ObservableObject {
         return model
     }
 
-    /// Whether extra Codex windows (Spark, code review) are shown, read off
-    /// the main actor.
-    ///
-    /// The Codex provider is an actor and asks for this on every fetch, and
-    /// `@Published` state is main-actor-isolated where `UserDefaults` is
-    /// thread-safe — so the provider reads the store, not the object. Absent
-    /// means on: a first launch should show them. `bool(forKey:)` cannot stand
-    /// in for that default — it answers false for a key that was never written.
-    nonisolated static func storedShowCodexExtraLimits(
-        defaults: UserDefaults = .standard
-    ) -> Bool {
-        defaults.object(forKey: Keys.showCodexExtraLimits) as? Bool ?? true
-    }
-
     /// The MiniMax region read straight from disk, off the main actor.
     ///
     /// Custom endpoints read straight from disk, off the main actor.
     ///
-    /// Moves any key an earlier build left in the defaults plist into the keychain,
-    /// once, and writes the list back without it.
-    ///
-    /// The rewrite is the point. `customEndpoints` is assigned during `init`, where
-    /// `didSet` does not run, so without this the plaintext key stayed in the plist —
-    /// readable by any process running as the user, and swept into backups — until
-    /// the user happened to edit that endpoint. Returns the list with the carried
-    /// keys cleared, so a later encode cannot put them back.
-    nonisolated static func movingLegacyKeysToKeychain(
-        _ list: [CustomEndpoint],
-        defaults: UserDefaults
-    ) -> [CustomEndpoint] {
-        guard list.contains(where: { $0.legacyAPIKey != nil }) else { return list }
-        var migrated = list
-        for index in migrated.indices {
-            guard let legacy = migrated[index].legacyAPIKey else { continue }
-            // Only if the keychain has nothing: a key already moved is the newer one.
-            if migrated[index].apiKey == nil {
-                migrated[index].saveAPIKey(legacy)
-            }
-            migrated[index].legacyAPIKey = nil
-        }
-        if let data = try? JSONEncoder().encode(migrated) {
-            defaults.set(data, forKey: Keys.customEndpoints)
-        }
-        return migrated
-    }
-
-    /// Custom endpoint providers are actors and ask for this on every fetch, and
-    /// `@Published` state is main-actor-isolated where `UserDefaults` is
-    /// thread-safe — so providers read the store, not the object.
-    nonisolated static func storedCustomEndpoints(
-        defaults: UserDefaults = .standard
-    ) -> [CustomEndpoint] {
-        guard let data = defaults.data(forKey: Keys.customEndpoints),
-              let endpoints = try? JSONDecoder().decode([CustomEndpoint].self, from: data)
-        else { return [] }
-        return endpoints
-    }
-
-    nonisolated static func updateStoredCustomEndpoint(
-        _ endpoint: CustomEndpoint,
-        defaults: UserDefaults = .standard
-    ) {
-        var endpoints = storedCustomEndpoints(defaults: defaults)
-        guard let index = endpoints.firstIndex(where: { $0.id == endpoint.id }) else { return }
-        endpoints[index] = endpoint
-        if let data = try? JSONEncoder().encode(endpoints) {
-            defaults.set(data, forKey: Keys.customEndpoints)
-        }
-    }
-
-    /// The MiniMax region read straight from disk, off the main actor.
-    ///
-    /// The provider is an actor and asks for this on every fetch, and
-    /// `@Published` state is main-actor-isolated where `UserDefaults` is
-    /// thread-safe — so the provider reads the store, not the object.
-    nonisolated static func storedMinimaxRegion(
-        defaults: UserDefaults = .standard
-    ) -> MiniMaxRegion {
-        guard let value = defaults.string(forKey: Keys.minimaxRegion),
-              let region = MiniMaxRegion(rawValue: value)
-        else { return .international }
-        return region
-    }
-
     /// True the very first time this copy runs, and never again.
     ///
     /// Deliberately *not* inferred from "there are no readings yet" — that is
@@ -723,7 +458,7 @@ final class Preferences: ObservableObject {
         // provider IDs untouched when upgrading from upstream.
         if defaults.bool(forKey: Keys.introducedOllama),
            !defaults.bool(forKey: Keys.migratedOllamaID) {
-            for key in [Keys.disconnected, Keys.order, Keys.mutedAlerts] {
+            for key in [Keys.disconnected, Keys.order] {
                 var seen = Set<String>()
                 let migrated = (defaults.stringArray(forKey: key) ?? []).map { id in
                     if id == "ollama" { return "ollama-local" }
@@ -795,7 +530,6 @@ final class Preferences: ObservableObject {
             defaults.string(forKey: Keys.lmstudioEndpoint)
                 ?? LMStudioEndpoint.configuredAddress() ?? LMStudioEndpoint.defaultAddress
         ).absoluteString) ?? LMStudioEndpoint.defaultAddress
-        self.mutedAlertProviders = Set(defaults.stringArray(forKey: Keys.mutedAlerts) ?? [])
         self.accountNicknames = defaults.dictionary(forKey: Keys.accountNicknames) as? [String: String] ?? [:]
         // Absent means never chosen, which is the hover behaviour the app was
         // designed around — not hidden, which would make a fresh install look
@@ -814,14 +548,6 @@ final class Preferences: ObservableObject {
         // is the choice of someone who found the notch too quiet.
         self.notificationChannel = defaults.string(forKey: Keys.notificationChannel)
             .flatMap(NotificationChannel.init(rawValue:)) ?? .notch
-        // Absent means never chosen, which is the icon every earlier version
-        // drew — see `showsLimitsInMenuBar`.
-        self.showsLimitsInMenuBar = defaults.bool(forKey: Keys.showsLimitsInMenuBar)
-        // Absent means an install from before this option, which must retain
-        // its existing compact status-item presentation.
-        self.showsWeeklyLimitInMenuBar = defaults.bool(forKey: Keys.showsWeeklyLimitInMenuBar)
-        // Absent is kept distinct from empty: never chosen is not choosing none.
-        self.menuBarProviders = defaults.stringArray(forKey: Keys.menuBarProviders).map(Set.init)
         // The right edge is where the notch has always been, and it is the one
         // side of a Mac that no system chrome claims by default.
         self.notchEdge = defaults.string(forKey: Keys.edge)
@@ -841,17 +567,10 @@ final class Preferences: ObservableObject {
             .map(DisplayPreference.display) ?? .followActiveWindow
         self.resetTimeFormat = defaults.string(forKey: Keys.resetTimeFormat)
             .flatMap(ResetTimeFormat.init(rawValue:)) ?? .automatic
-        self.showUsagePace = defaults.bool(forKey: Self.showUsagePaceKey)
         // Off by default: see the property. A request spent on every look is a
         // choice, and on a rate-limited provider it can cost freshness rather
         // than buy it.
         self.asksProviderOnLook = defaults.bool(forKey: Keys.asksProviderOnLook)
-        // Off by default: it swaps what Claude's ring means, and that is a
-        // choice for whoever budgets their week that way.
-        self.claudeDailyPaceRing = defaults.bool(forKey: Keys.claudeDailyPaceRing)
-        // Off by default for the same reason: it changes what every ring means.
-        self.weeklyHeadline = defaults.bool(forKey: Keys.weeklyHeadline)
-        self.showCodexExtraLimits = Self.storedShowCodexExtraLimits(defaults: defaults)
         self.deepSeekPricingEnabled = defaults.object(forKey: Keys.deepSeekPricingEnabled) as? Bool ?? true
         if let data = defaults.data(forKey: Keys.deepSeekPricingSchedule),
            let schedule = try? JSONDecoder().decode(DeepSeekPricing.Schedule.self, from: data) {
@@ -868,15 +587,7 @@ final class Preferences: ObservableObject {
             .flatMap(AntigravityHeadlineLimit.init(rawValue:)) ?? .automatic
         self.antigravityHeadlineModel = defaults.string(forKey: Keys.antigravityHeadlineModel)
             .flatMap(AntigravityHeadlineModel.init(rawValue:)) ?? .gemini
-        // Follow the Mac unless the user explicitly chooses a Sys Notch colour.
-        // Off by default: an extra arc in a 44pt circle is a change to how
-        // every reading looks, and nobody asked for it on their behalf.
-        self.weeklyRingDashed = defaults.object(forKey: Keys.weeklyRingDashed) as? Bool ?? false
         self.showsNotchReadings = defaults.object(forKey: Keys.showsNotchReadings) as? Bool ?? true
-        self.weeklyReading = defaults.object(forKey: Keys.weeklyReading) as? Bool ?? false
-
-        self.weeklyRing = defaults.string(forKey: Keys.weeklyRing)
-            .flatMap(WeeklyRing.init(rawValue:)) ?? .off
         // On unless turned off: it is how the notch is carried to another edge,
         // and a control that is missing by default is one nobody finds.
         self.accentColor = defaults.string(forKey: Keys.accentColor)
@@ -911,81 +622,9 @@ final class Preferences: ObservableObject {
             ?? SessionChime.defaultFinished
         self.sessionBlockedSoundName = defaults.string(forKey: Keys.sessionBlockedSoundName)
             ?? SessionChime.defaultBlocked
-        self.announceUsageReset = defaults.object(forKey: Keys.announceUsageReset) as? Bool ?? true
-        self.usageResetSound = defaults.object(forKey: Keys.usageResetSound) as? Bool ?? true
-        self.usageResetSoundName = defaults.string(forKey: Keys.usageResetSoundName)
-            ?? SessionChime.defaultFinished
-        self.announceSessionLimitReached = defaults.object(forKey: Keys.announceSessionLimitReached) as? Bool ?? true
-        self.announceWeeklyLimitReached = defaults.object(forKey: Keys.announceWeeklyLimitReached) as? Bool ?? true
-        self.limitReachedSound = defaults.object(forKey: Keys.limitReachedSound) as? Bool ?? true
-        self.limitReachedSoundName = defaults.string(forKey: Keys.limitReachedSoundName)
-            ?? SessionChime.defaultBlocked
-        self.geminiAPIMonthlyTokenBudget = Self.storedGeminiAPIMonthlyTokenBudget(defaults: defaults)
-        self.minimaxRegion = Self.storedMinimaxRegion(defaults: defaults)
-        self.qoderRegion = Sites.QoderRegion(rawValue: defaults.string(forKey: Keys.qoderRegion) ?? "") ?? .global
-        if let data = defaults.data(forKey: Keys.customEndpoints),
-           let list = try? JSONDecoder().decode([CustomEndpoint].self, from: data) {
-            self.customEndpoints = Self.movingLegacyKeysToKeychain(list, defaults: defaults)
-        } else {
-            self.customEndpoints = []
-        }
         // Read from the system rather than from our own store: the user can turn
         // this off in System Settings, and a remembered `true` would then be a lie.
         self.launchAtLogin = Self.isRegisteredForLogin
-    }
-
-    // MARK: Custom Endpoints
-
-    func addCustomEndpoint(_ endpoint: CustomEndpoint) {
-        customEndpoints.append(endpoint)
-        if endpoint.isEnabled {
-            setConnected(true, for: endpoint.providerID)
-        }
-    }
-
-    func updateCustomEndpoint(_ endpoint: CustomEndpoint) {
-        if let idx = customEndpoints.firstIndex(where: { $0.id == endpoint.id }) {
-            var merged = endpoint
-            // Check latest stored endpoint in UserDefaults to merge latest readings if mapping hasn't changed
-            let storedList = Self.storedCustomEndpoints(defaults: defaults)
-            if let stored = storedList.first(where: { $0.id == endpoint.id }) {
-                let mappingUnchanged = (stored.usageSource == endpoint.usageSource)
-                    && (stored.usagePreset == endpoint.usagePreset)
-                    && (stored.usageURL == endpoint.usageURL)
-                    && (stored.usageRecordsPath == endpoint.usageRecordsPath)
-                    && (stored.usageModelField == endpoint.usageModelField)
-                    && (stored.usageTokenField == endpoint.usageTokenField)
-                    && (stored.usageModelFilter == endpoint.usageModelFilter)
-                    && (stored.trackingUnit == endpoint.trackingUnit)
-
-                // If mapping is unchanged and user did not explicitly reset or edit readings:
-                // When the editor loaded, it had stored (or earlier) readings. If the user didn't change them
-                // in the editor, we preserve the latest stored readings that might have been sampled in the background.
-                if mappingUnchanged {
-                    if merged.currentTokensUsedM == customEndpoints[idx].currentTokensUsedM {
-                        merged.currentTokensUsedM = stored.currentTokensUsedM
-                    }
-                    if merged.usageHistory == customEndpoints[idx].usageHistory {
-                        merged.usageHistory = stored.usageHistory
-                    }
-                    if merged.currentSpendUSD == customEndpoints[idx].currentSpendUSD {
-                        merged.currentSpendUSD = stored.currentSpendUSD
-                    }
-                }
-            }
-            customEndpoints[idx] = merged
-            setConnected(merged.isEnabled, for: merged.providerID)
-        }
-    }
-
-    func removeCustomEndpoint(id: String) {
-        if let endpoint = customEndpoints.first(where: { $0.id == id }) {
-            setConnected(false, for: endpoint.providerID)
-            if let filename = endpoint.customIconFilename {
-                CustomIconStore.deleteIcon(filename: filename)
-            }
-        }
-        customEndpoints.removeAll { $0.id == id }
     }
 
     // MARK: Account names
@@ -1004,33 +643,7 @@ final class Preferences: ObservableObject {
         }
     }
 
-    // MARK: Threshold alerts
-
-    func isMutedAlerts(for providerID: String) -> Bool {
-        mutedAlertProviders.contains(providerID)
-    }
-
-    func setAlertsMuted(_ muted: Bool, for providerID: String) {
-        if muted {
-            mutedAlertProviders.insert(providerID)
-        } else {
-            mutedAlertProviders.remove(providerID)
-        }
-    }
-
     // MARK: Menu bar
-
-    /// Whether this provider is chosen for the menu bar. Says nothing about
-    /// whether it is read — that is `isConnected`.
-    func isInMenuBar(_ providerID: String) -> Bool {
-        menuBarLimits.isChosen(providerID)
-    }
-
-    /// Put one provider in the menu bar or take it out. `listed` is every
-    /// provider Settings is showing, which the first choice writes down.
-    func setInMenuBar(_ shown: Bool, for providerID: String, among listed: [String]) {
-        menuBarProviders = menuBarLimits.choosing(shown, providerID, among: listed).chosen
-    }
 
     /// System providers stay on by default.
     nonisolated static func isDefaultOnFamily(_ providerID: String) -> Bool {

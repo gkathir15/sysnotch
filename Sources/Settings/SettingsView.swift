@@ -356,7 +356,6 @@ struct SettingsView: View {
     /// makes returning focus the exact moment the old value is wrong.
     @State private var accounts: [ProviderSummary] = []
     /// The providers the menu bar can show, from the same snapshots it draws.
-    @State private var menuBarChoices: [MenuBarChoice] = []
     @State private var displays: [DisplayOption] = []
     @State private var selection: SettingsSection = .accounts
     /// Whether Accounts shows its provider panes. Remembered, so someone who
@@ -412,10 +411,6 @@ struct SettingsView: View {
     var ollamaRelay: OllamaActivityRelay? = nil
     var lmstudioMetrics: LMStudioMetrics? = nil
     var usageStore: UsageStore? = nil
-    var previewResetAlert: (() -> Void)? = nil
-    var previewSessionLimitAlert: (() -> Void)? = nil
-    var previewWeeklyLimitAlert: (() -> Void)? = nil
-    var sendTestNotification: (() -> Void)? = nil
     @Environment(\.codenotchReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -512,17 +507,6 @@ struct SettingsView: View {
                 // for that explicit event, not on every usage poll.
                 accounts = providers()
             }
-        .onReceive((usageStore?.$snapshots.eraseToAnyPublisher()
-                    ?? Empty<[ProviderSnapshot], Never>().eraseToAnyPublisher())
-            .receive(on: RunLoop.main)) { snapshots in
-                // Every reading lands here. The rows only change when who can
-                // be listed does, not whenever a figure moves.
-                let choices = MenuBarChoice.listed(in: snapshots)
-                if choices != menuBarChoices { menuBarChoices = choices }
-            }
-        .onReceive(preferences.$customEndpoints.receive(on: RunLoop.main)) { _ in
-            accounts = providers()
-        }
     }
 
     /// The subject list: a full-height column on a shade lighter than the
@@ -955,14 +939,6 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // Only while there is a menu bar item for it to change. With
-                // the app in the Dock or nowhere, a switch here would do
-                // nothing anyone could see; the choice is kept for when the
-                // item comes back.
-                if preferences.appPresence == .menuBar {
-                    menuBarLimitRows
-                }
-
                 Picker(L10n.t("Language"), selection: $preferences.language) {
                     ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                 }
@@ -975,64 +951,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    /// Limits in the menu bar: the switch, and under it one row for each
-    /// provider the bar can show.
-    ///
-    /// Each of those rows is about the menu bar alone. Whether a provider is
-    /// read at all is its own switch in Accounts, and nothing here touches it.
-    @ViewBuilder
-    private var menuBarLimitRows: some View {
-        Toggle(L10n.t("Show limit information in menu bar"), isOn: $preferences.showsLimitsInMenuBar)
-        Text(L10n.t("Swaps the icon for each chosen provider's five-hour limit — how much is used and how long until it resets."))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-
-        if preferences.showsLimitsInMenuBar {
-            Toggle(L10n.t("Show weekly limit in menu bar"),
-                   isOn: $preferences.showsWeeklyLimitInMenuBar)
-            Text(L10n.t("Adds a compact weekly-usage ring around each chosen provider that publishes it."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            ForEach(menuBarChoices) { choice in
-                Toggle(isOn: Binding(
-                    get: { preferences.isInMenuBar(choice.id) },
-                    set: { preferences.setInMenuBar($0, for: choice.id, among: menuBarChoices.map(\.id)) }
-                )) {
-                    // The mark and name as the Accounts rows draw them, so a
-                    // provider is recognisably the same one in both places.
-                    HStack(spacing: 10) {
-                        ProviderGlyphView(glyph: choice.glyph, size: 16)
-                            .accessibilityHidden(true)
-                        Text(choice.name)
-                    }
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .help(L10n.t("Shows \(choice.name)'s five-hour limit in the menu bar. Sys Notch reads it either way."))
-            }
-
-            Text(menuBarChoices.isEmpty
-                 ? L10n.t("Nothing Sys Notch reads has a five-hour limit to show yet. Claude and Codex do — switch one on in Accounts.")
-                 : L10n.t("Leaving a provider out keeps it off the menu bar only — Sys Notch still reads it. With none chosen, the icon comes back."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Said only once it applies: past two the item keeps each share
-            // and drops the countdowns, and past four it stops, because macOS
-            // hides a status item that does not fit rather than squeezing it.
-            if menuBarChoices.filter({ preferences.isInMenuBar($0.id) }).count > StatusItemSummary.fullEntryLimit {
-                Text(L10n.t("Past two, each shows its share alone and the countdowns move to the tooltip. Past four, the rest are in the menu."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 
     private var notificationsPane: some View {
@@ -1051,16 +969,6 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let sendTestNotification {
-                    Button(L10n.t("Send a test")) { sendTestNotification() }
-                    Text(preferences.notificationChannel == .mac
-                         ? L10n.t("Opens System Settings when banners are off for Sys Notch.")
-                         : L10n.t("The notch opens for a moment, with the session sound."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             // Its own section rather than a line in General: this is the only
@@ -1100,65 +1008,6 @@ struct SettingsView: View {
                 Text(L10n.t("The sound plays on the ordinary output, not the interface sound-effects channel — so it is still heard with \u{201C}Play user interface sound effects\u{201D} switched off in System Settings → Sound."))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section(L10n.t("When a limit is reached")) {
-                Toggle(L10n.t("Show notification for session limit"), isOn: $preferences.announceSessionLimitReached)
-
-                Toggle(L10n.t("Show notification for weekly limit"), isOn: $preferences.announceWeeklyLimitReached)
-
-                Toggle(L10n.t("Play a sound"), isOn: $preferences.limitReachedSound)
-
-                SoundRow(label: L10n.t("Alert sound"), name: $preferences.limitReachedSoundName,
-                         pickerEnabled: preferences.limitReachedSound)
-
-                if let previewSessionLimitAlert {
-                    Button(L10n.t("Preview session limit alert")) {
-                        previewSessionLimitAlert()
-                    }
-                }
-
-                if let previewWeeklyLimitAlert {
-                    Button(L10n.t("Preview weekly limit alert")) {
-                        previewWeeklyLimitAlert()
-                    }
-                }
-
-                Text(L10n.t("Displays a notification card from the side of the notch when a provider's session or weekly usage limit is reached."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section(L10n.t("When a limit resets")) {
-                Toggle(L10n.t("Show notification from notch"), isOn: $preferences.announceUsageReset)
-
-                Toggle(L10n.t("Play a sound"), isOn: $preferences.usageResetSound)
-
-                SoundRow(label: L10n.t("Reset sound"), name: $preferences.usageResetSoundName,
-                         pickerEnabled: preferences.usageResetSound)
-
-                if let previewResetAlert {
-                    Button(L10n.t("Preview notification")) {
-                        previewResetAlert()
-                    }
-                }
-
-                Text(L10n.t("Displays a notification card from the side of the notch when a provider's usage limit resets."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            // The mute switch itself lives on each provider's own row in
-            // Accounts — muting is a fact about that provider's reading, not
-            // about notifications in general — but the mechanism it silences
-            // belongs to this pane's subject.
-            Section(L10n.t("Threshold alerts")) {
-                Text(L10n.t("A system notification the moment a provider's headline limit crosses 80%, and again at 100% — once per crossing, and again only after the window rolls over. Mute one from the bell beside its row in Accounts."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1480,22 +1329,6 @@ private struct AccentColorSwatch: View {
     }
 }
 
-/// A provider as the menu bar rows in Settings list it.
-private struct MenuBarChoice: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let glyph: ProviderGlyph
-
-    /// What the menu bar could show, in the order it would show it: the
-    /// store's own snapshots, which only ever hold the providers being read,
-    /// narrowed to the ones the bar can summarise.
-    static func listed(in snapshots: [ProviderSnapshot]) -> [MenuBarChoice] {
-        snapshots.filter(StatusItemSummary.canSummarise).map { snapshot in
-            MenuBarChoice(id: snapshot.id, name: snapshot.displayName, glyph: snapshot.glyph)
-        }
-    }
-}
-
 /// One provider: whether Sys Notch reads it, whose account that is, and where
 /// to go if there is nothing to read.
 /// One sound choice, with a preview button.
@@ -1565,8 +1398,6 @@ private struct AccountRow: View {
     @State private var isHovering = false
 
     private var isConnected: Bool { preferences.isConnected(provider.id) }
-    private var isMuted: Bool { preferences.isMutedAlerts(for: provider.id) }
-
     /// The name the owner gave the account, where there is one; the row, the
     /// notch and the notifications all use the same word.
     private var displayName: String { preferences.nickname(for: provider.id) ?? provider.name }
@@ -1674,23 +1505,6 @@ private struct AccountRow: View {
                         .padding(12)
                         .frame(width: 280)
                     }
-                }
-
-                // Per-provider threshold alerts, muted here rather than in a
-                // separate notifications pane — the thing being muted is this
-                // row's reading, so the control belongs on the row.
-                if isConnected, provider.kind == .usage {
-                    Button {
-                        preferences.setAlertsMuted(!isMuted, for: provider.id)
-                    } label: {
-                        Image(systemName: isMuted ? "bell.slash" : "bell")
-                            .font(.system(size: 11))
-                            .foregroundStyle(isMuted ? .tertiary : .secondary)
-                    }
-                    .buttonStyle(SettingsIconButtonStyle())
-                    .help(isMuted
-                          ? L10n.t("Alerts for \(displayName) are muted. Click to unmute.")
-                          : L10n.t("Alert when \(displayName) crosses 80% and 100% of a limit."))
                 }
 
                 // Prefers the app that owns the account, and falls back to the
@@ -1807,170 +1621,6 @@ private struct AccountRow: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 6) {
             accountDetail
-        }
-    }
-
-    /// The API key input for Ollama. Stored in the keychain on Save, then a
-    /// refresh is triggered so the ring picks up the new credential without a
-    /// relaunch.
-    @State private var ollamaKey = ""
-    @State private var ollamaKeySaved = false
-
-    private var ollamaKeyEntry: some View {
-        // Laid out like the Gemini budget above it, and for the same reason:
-        // a field's own title becomes a leading label in a `Form` row, which
-        // crowds the box and pins it to the caption. The caption goes on its
-        // own line instead, and `.small` comes off the controls — it bought
-        // nothing but a cramped row.
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L10n.t("Ollama API key"))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                SecureField(L10n.t("Paste your key"), text: $ollamaKey)
-                    .textContentType(.password)
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .frame(maxWidth: 260)
-                Button(L10n.t("Save")) {
-                    guard !ollamaKey.isEmpty else { return }
-                    OllamaCredentials.store(ollamaKey)
-                    ollamaKey = ""
-                    ollamaKeySaved = true
-                    _ = signIn(provider.id)
-                }
-                .disabled(ollamaKey.isEmpty)
-                if ollamaKeySaved {
-                    Text(L10n.t("Saved"))
-                        .foregroundStyle(.green)
-                }
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    /// The API token input for Apify. Stored in the keychain on Save, then a
-    /// refresh is triggered so the ring picks up the new credential without a
-    /// relaunch — the same shape as Ollama's key above, and for the same
-    /// reason the caption sits on its own line.
-    @State private var apifyToken = ""
-    @State private var apifyTokenSaved = false
-
-    private var apifyTokenEntry: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L10n.t("Apify API token"))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                SecureField(L10n.t("Paste your key"), text: $apifyToken)
-                    .textContentType(.password)
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .frame(maxWidth: 260)
-                Button(L10n.t("Save")) {
-                    guard !apifyToken.isEmpty else { return }
-                    ApifyCredentials.storeSettingsToken(apifyToken)
-                    apifyToken = ""
-                    apifyTokenSaved = true
-                    _ = signIn(provider.id)
-                }
-                .disabled(apifyToken.isEmpty)
-                if apifyTokenSaved {
-                    Text(L10n.t("Saved"))
-                        .foregroundStyle(.green)
-                }
-            }
-            Text(L10n.t("Paste a token from Apify Console › Settings › API & Integrations. Not needed after apify login, or with APIFY_TOKEN exported. Stored in your login keychain."))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.top, 2)
-    }
-
-    /// Region and Coding Plan key for MiniMax.
-    ///
-    /// Laid out like the Ollama key above it, and for the same reason: a
-    /// field's own title becomes a leading label in a `Form` row. Captions
-    /// sit on their own line. Changing the region only stores the choice —
-    /// opening Sign in here would throw a sheet over a preference picker.
-    @State private var minimaxKey = ""
-    @State private var minimaxKeySaved = false
-    @State private var minimaxCookie = ""
-    @State private var minimaxCookieSaved = false
-
-    private var minimaxEntry: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.t("Region"))
-                    .foregroundStyle(.secondary)
-                Picker(selection: $preferences.minimaxRegion) {
-                    Text(L10n.t("International")).tag(MiniMaxRegion.international)
-                    Text(L10n.t("China mainland")).tag(MiniMaxRegion.china)
-                } label: {
-                    EmptyView()
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(width: 160)
-            }
-
-            minimaxKeyEntry
-            minimaxCookieEntry
-
-            Text(L10n.t("Sign in to MiniMax in Sys Notch, or paste a Coding Plan key. A Cookie header is optional. Sys Notch never reads a browser's cookies."))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.top, 2)
-    }
-
-    private var minimaxKeyEntry: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L10n.t("MiniMax Coding Plan key"))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                SecureField(L10n.t("Paste your key"), text: $minimaxKey)
-                    .textContentType(.password)
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .frame(maxWidth: 260)
-                Button(L10n.t("Save")) {
-                    guard !minimaxKey.isEmpty else { return }
-                    MiniMaxCredentials.storeAPIKey(minimaxKey)
-                    minimaxKey = ""
-                    minimaxKeySaved = true
-                    _ = signIn(provider.id)
-                }
-                .disabled(minimaxKey.isEmpty)
-                if minimaxKeySaved {
-                    Text(L10n.t("Saved"))
-                        .foregroundStyle(.green)
-                }
-            }
-        }
-    }
-
-    private var minimaxCookieEntry: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L10n.t("Cookie header (optional)"))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                SecureField(L10n.t("Cookie: …"), text: $minimaxCookie)
-                    .textContentType(.password)
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                    .frame(maxWidth: 260)
-                Button(L10n.t("Save")) {
-                    guard !minimaxCookie.isEmpty else { return }
-                    MiniMaxCredentials.storeCookieHeader(minimaxCookie)
-                    minimaxCookie = ""
-                    minimaxCookieSaved = true
-                    _ = signIn(provider.id)
-                }
-                .disabled(minimaxCookie.isEmpty)
-                if minimaxCookieSaved {
-                    Text(L10n.t("Saved"))
-                        .foregroundStyle(.green)
-                }
-            }
         }
     }
 
