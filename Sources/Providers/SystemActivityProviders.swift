@@ -605,7 +605,10 @@ actor DiskProvider: UsageProvider {
         defer { IOObjectRelease(iterator) }
         while case let child = IOIteratorNext(iterator), child != 0 {
             if let found = findWholeMedia(child) {
-                IOObjectRelease(child)
+                // A direct child is the returned object itself; the caller owns
+                // it and releases it after reading. Only a deeper match leaves
+                // the child to be released here.
+                if found != child { IOObjectRelease(child) }
                 return found
             }
             IOObjectRelease(child)
