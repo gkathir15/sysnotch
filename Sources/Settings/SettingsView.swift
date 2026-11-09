@@ -26,11 +26,10 @@ extension View {
 /// crossing-and-notification machinery it switches is Notifications' to
 /// explain.
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case accounts, phone, appearance, notifications, general
+    case accounts, appearance, notifications, general
 
-    /// The sections the sidebar lists; Phone only once pairing is offered.
     static var visible: [SettingsSection] {
-        allCases.filter { $0 != .phone || PhoneLink.isAvailable }
+        allCases
     }
 
     static let providerPanes: [SettingsSection] = []
@@ -45,7 +44,6 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .accounts:      return L10n.t("System Metrics")
-        case .phone:         return L10n.t("Phone")
         case .appearance:    return L10n.t("Appearance")
         case .notifications: return L10n.t("Notifications")
         case .general:       return L10n.t("General")
@@ -58,17 +56,15 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .accounts:      return L10n.t("Choose which system metrics the notch displays.")
-        case .phone:         return L10n.t("See your system metrics on your phone.")
         case .appearance:    return L10n.t("How the notch looks and where it sits.")
-        case .notifications: return L10n.t("What Codenotch tells you, and when.")
-        case .general:       return L10n.t("Startup, updates and everything else.")
+        case .notifications: return L10n.t("What Sys Notch tells you, and when.")
+        case .general:       return L10n.t("Startup and everything else.")
         }
     }
 
     var icon: String {
         switch self {
         case .accounts:      return "gauge.with.dots.needle.bottom.50percent"
-        case .phone:         return "iphone"
         case .appearance:    return "paintbrush.fill"
         case .notifications: return "bell.badge.fill"
         case .general:       return "gearshape.fill"
@@ -81,7 +77,6 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var tint: Color {
         switch self {
         case .accounts:      return .blue
-        case .phone:         return .green
         case .appearance:    return .indigo
         case .notifications: return .red
         case .general:       return .gray
@@ -148,8 +143,6 @@ private struct SettingsSidebarRow: View {
     let selectionSpace: Namespace.ID
     var indent = false
     var count: Int? = nil
-    /// A red dot — a newer version waiting, on General.
-    var badge: Bool = false
     var disclosure: Binding<Bool>? = nil
     let select: () -> Void
 
@@ -174,13 +167,6 @@ private struct SettingsSidebarRow: View {
                     .foregroundStyle(.white.opacity(isSelected ? 0.95 : isHovered ? 0.92 : 0.78))
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                // A newer version waiting — see `Updater.pending`.
-                if badge {
-                    Circle()
-                        .fill(Color(nsColor: .systemRed))
-                        .frame(width: 7, height: 7)
-                        .transition(.scale.combined(with: .opacity))
-                }
                 if let count {
                     Text("\(count)")
                         .font(.system(size: 11, weight: .medium).monospacedDigit())
@@ -317,7 +303,7 @@ private struct SettingsQuitRow: View {
                 Image(systemName: "power")
                     .font(.system(size: 12, weight: .regular))
                     .frame(width: 18)
-                Text(L10n.t("Quit Codenotch"))
+                Text(L10n.t("Quit Sys Notch"))
                     .font(.system(size: 13, weight: .regular))
             }
             .foregroundStyle(isHovered ? Self.hoverRed : Color.white.opacity(0.55))
@@ -364,9 +350,6 @@ private extension AnyTransition {
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     let providers: () -> [ProviderSummary]
-    var phoneLinkPairing: PhoneLinkPairing?
-    var phoneLinkRegistry: PhoneLinkRegistry?
-    var phoneLinkServerStatus: PhoneLinkServerStatus?
 
     /// Re-read whenever the sheet comes forward. Switching account happens in
     /// another app, so the user is always coming *back* here to see it — which
@@ -426,7 +409,6 @@ struct SettingsView: View {
     /// effect the next time the edge changed.
     let resetPosition: () -> Void
     let quit: () -> Void
-    @ObservedObject var updater: Updater
     var ollamaRelay: OllamaActivityRelay? = nil
     var lmstudioMetrics: LMStudioMetrics? = nil
     var usageStore: UsageStore? = nil
@@ -556,7 +538,7 @@ struct SettingsView: View {
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 22, height: 22)
-                Text("Codenotch")
+                Text("Sys Notch")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
             }
@@ -571,7 +553,6 @@ struct SettingsView: View {
                             isSelected: selection == section,
                             selectionSpace: selectionSpace,
                             count: section == .accounts ? connectedCount : nil,
-                            badge: section == .general && updater.pending != nil,
                             disclosure: section == .accounts ? $accountsExpanded : nil,
                             select: { selectSection(section) }
                         )
@@ -594,23 +575,10 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 SettingsQuitRow(quit: quit)
-                HStack(spacing: 8) {
-                    Text("Codenotch \(updater.currentVersion)")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.32))
-                    Spacer(minLength: 0)
-                    // Only once a check has found a newer version. Sparkle
-                    // downloads it in the background either way; this is for
-                    // someone who would rather have it now than on next launch.
-                    if let newer = updater.pending {
-                        Button(L10n.t("Update")) { updater.reoffer() }
-                            .buttonStyle(SettingsButtonStyle(kind: .prominent, compact: true))
-                            .help(L10n.t("Version \(newer) is available"))
-                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                    }
-                }
-                .animation(.easeOut(duration: 0.2), value: updater.outcome)
-                .padding(.horizontal, 10)
+                Text("Sys Notch \(Self.appVersion)")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.32))
+                    .padding(.horizontal, 10)
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 16)
@@ -674,7 +642,6 @@ struct SettingsView: View {
     private func paneContent(for section: SettingsSection) -> some View {
         switch section {
         case .accounts:      accountsPane
-        case .phone:         phonePane
         case .appearance:    appearancePane
         case .notifications: notificationsPane
         case .general:       generalPane
@@ -1046,12 +1013,12 @@ struct SettingsView: View {
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .help(L10n.t("Shows \(choice.name)'s five-hour limit in the menu bar. Codenotch reads it either way."))
+                .help(L10n.t("Shows \(choice.name)'s five-hour limit in the menu bar. Sys Notch reads it either way."))
             }
 
             Text(menuBarChoices.isEmpty
-                 ? L10n.t("Nothing Codenotch reads has a five-hour limit to show yet. Claude and Codex do — switch one on in Accounts.")
-                 : L10n.t("Leaving a provider out keeps it off the menu bar only — Codenotch still reads it. With none chosen, the icon comes back."))
+                 ? L10n.t("Nothing Sys Notch reads has a five-hour limit to show yet. Claude and Codex do — switch one on in Accounts.")
+                 : L10n.t("Leaving a provider out keeps it off the menu bar only — Sys Notch still reads it. With none chosen, the icon comes back."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1088,7 +1055,7 @@ struct SettingsView: View {
                 if let sendTestNotification {
                     Button(L10n.t("Send a test")) { sendTestNotification() }
                     Text(preferences.notificationChannel == .mac
-                         ? L10n.t("Opens System Settings when banners are off for Codenotch.")
+                         ? L10n.t("Opens System Settings when banners are off for Sys Notch.")
                          : L10n.t("The notch opens for a moment, with the session sound."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -1125,7 +1092,7 @@ struct SettingsView: View {
                 SoundRow(label: L10n.t("Waiting on you"), name: $preferences.sessionBlockedSoundName,
                          pickerEnabled: preferences.sessionEndSound)
 
-                Text(L10n.t("Codenotch already knows the moment an agent stops working or stops to ask you something. Clicking the notch while it is open brings that session's app to the front — the app, not the tab: only some terminals let anything outside them choose a tab, so the tooltip names the session instead."))
+                Text(L10n.t("Sys Notch already knows the moment an agent stops working or stops to ask you something. Clicking the notch while it is open brings that session's app to the front — the app, not the tab: only some terminals let anything outside them choose a tab, so the tooltip names the session instead."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1198,7 +1165,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    // Startup and updates together: both are about what Codenotch does
+    // Startup and updates together: both are about what Sys Notch does
     // without being asked, and one switch under its own header looked
     // like an oversight rather than a section.
     private var generalPane: some View {
@@ -1206,7 +1173,7 @@ struct SettingsView: View {
             // No title on the group: the pane's own header above already
             // says "General", and repeating it here would say it twice.
             Section {
-                Toggle(L10n.t("Open Codenotch at login"), isOn: $preferences.launchAtLogin)
+                Toggle(L10n.t("Open Sys Notch at login"), isOn: $preferences.launchAtLogin)
                 if let problem = preferences.launchAtLoginProblem {
                     Text(problem)
                         .font(.caption)
@@ -1214,44 +1181,10 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Toggle(L10n.t("Check for updates automatically"), isOn: Binding(
-                    get: { updater.automatic },
-                    set: { updater.automatic = $0 }
-                ))
-
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    // Disclosed rather than merely silent. An app that updates
-                    // itself unprompted *and* reads other apps' credentials is
-                    // exactly the shape security tooling flags; saying so, with
-                    // a way to switch it off, is the difference between a
-                    // background updater and something that looks like it is
-                    // hiding.
-                    Text(L10n.t("Version \(updater.currentVersion). New versions are offered in the notch, and install when you choose Update."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    // The card a new version brings up in the notch, played
-                    // through for a version that is not there.
-                    Button(L10n.t("Preview")) { updater.preview() }
-                        .controlSize(.small)
-                        .help(L10n.t("Show the update card in the notch, with nothing downloaded"))
-                    Button(L10n.t("Check now")) { updater.checkNow() }
-                        .controlSize(.small)
-                }
-
-                // Says what happened, where the user is already looking.
-                // Sparkle's own answer to a failed check is a modal reading
-                // "an error occurred in retrieving update information", which
-                // names no cause and offers nothing to do about it.
-                if let message = updater.outcome.message {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(
-                            updater.outcome == .unreachable ? .orange : .secondary
-                        )
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(L10n.t("Version \(Self.appVersion). This is a standalone build: it never checks for or downloads updates."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section(L10n.t("Readings")) {
@@ -1300,7 +1233,7 @@ struct SettingsView: View {
             if let display = displays.first(where: { $0.id == id }) {
                 return L10n.t("Pinned to \(display.name).")
             }
-            return L10n.t("That display is disconnected. Codenotch follows the active window until it returns.")
+            return L10n.t("That display is disconnected. Sys Notch follows the active window until it returns.")
         }
     }
 
@@ -1336,6 +1269,7 @@ struct SettingsView: View {
     static let sidebarInset: CGFloat = 4
     static let sidebarCornerRadius: CGFloat = 14
     static let sidebarWidth: CGFloat = 220
+    static let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? ""
 
     /// The sidebar plus a detail pane wide enough for an account row's name,
     /// buttons and switch without crowding.
@@ -1375,7 +1309,7 @@ struct SettingsView: View {
     /// this, sees four blank rings and concludes it is broken — and the
     /// distinction that catches them out is Claude *Code*, not the Claude app.
     static var setupCopy: String {
-        L10n.t("Codenotch monitors system activity in real-time — System RAM, CPU Load, Thermal Pressure, Network Speed, and Energy / Battery State.")
+        L10n.t("Sys Notch monitors system activity in real-time — System RAM, CPU Load, Thermal Pressure, Network Speed, and Energy / Battery State.")
     }
 
     static var keychainCopy: String {
@@ -1562,7 +1496,7 @@ private struct MenuBarChoice: Identifiable, Equatable {
     }
 }
 
-/// One provider: whether Codenotch reads it, whose account that is, and where
+/// One provider: whether Sys Notch reads it, whose account that is, and where
 /// to go if there is nothing to read.
 /// One sound choice, with a preview button.
 private struct SoundRow: View {
@@ -1782,7 +1716,7 @@ private struct AccountRow: View {
                         // Not "it will stop asking": for Claude it will not.
                         // Claude Code recreates its login when the token
                         // rotates, and a recreated item forgets the grant.
-                        .help(L10n.t("Asks macOS for \(provider.name)'s saved login again. Deny stops Codenotch reading it until you ask again."))
+                        .help(L10n.t("Asks macOS for \(provider.name)'s saved login again. Deny stops Sys Notch reading it until you ask again."))
                 }
 
                 if isConnected, let destination {
@@ -1981,7 +1915,7 @@ private struct AccountRow: View {
             minimaxKeyEntry
             minimaxCookieEntry
 
-            Text(L10n.t("Sign in to MiniMax in Codenotch, or paste a Coding Plan key. A Cookie header is optional. Codenotch never reads a browser's cookies."))
+            Text(L10n.t("Sign in to MiniMax in Sys Notch, or paste a Coding Plan key. A Cookie header is optional. Sys Notch never reads a browser's cookies."))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2071,7 +2005,7 @@ private struct AccountRow: View {
             // Not a sign-in problem, so do not send them off to sign in. The
             // credential is right there and macOS is the one saying no — the
             // remedy is the button on this same row.
-            Text(L10n.t("Codenotch is not reading \(provider.name)'s saved login. Choose Allow access… above and answer Allow."))
+            Text(L10n.t("Sys Notch is not reading \(provider.name)'s saved login. Choose Allow access… above and answer Allow."))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
@@ -2179,128 +2113,3 @@ private struct AccountRow: View {
 
 }
 
-extension SettingsView {
-    @ViewBuilder
-    private var phonePane: some View {
-        if let pairing = phoneLinkPairing, let registry = phoneLinkRegistry, let status = phoneLinkServerStatus {
-            PhoneSettingsPane(preferences: preferences, pairing: pairing, registry: registry, serverStatus: status)
-        } else {
-            Text("Phone linking is not available.")
-        }
-    }
-}
-
-struct PhoneSettingsPane: View {
-    @ObservedObject var preferences: Preferences
-    @ObservedObject var pairing: PhoneLinkPairing
-    @ObservedObject var registry: PhoneLinkRegistry
-    @ObservedObject var serverStatus: PhoneLinkServerStatus
-    
-    @State private var deviceToRemove: PairedDevice?
-    
-    private func lastSeenText(for device: PairedDevice) -> String {
-        let diff = Date().timeIntervalSince(device.lastSeenAt)
-        if diff < 60 {
-            return L10n.t("Active now")
-        }
-        if device.lastSeenAt == device.pairedAt {
-            let df = DateFormatter()
-            df.locale = L10n.locale
-            df.dateStyle = .medium
-            df.timeStyle = .none
-            return L10n.t("Paired \(df.string(from: device.pairedAt))")
-        }
-        let rf = RelativeDateTimeFormatter()
-        rf.locale = L10n.locale
-        rf.unitsStyle = .full
-        return "Last seen \(rf.localizedString(for: device.lastSeenAt, relativeTo: Date()))"
-    }
-    
-    var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: $preferences.phoneLinkEnabled) {
-                    Text(L10n.t("Allow phones on this network"))
-                    Text(L10n.t("Your phone reads usage from this Mac over your Wi-Fi. Nothing leaves your network."))
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                
-                HStack {
-                    switch serverStatus.state {
-                    case .off:
-                        Circle().fill(Color.gray).frame(width: 8, height: 8)
-                        Text(L10n.t("Off"))
-                    case .starting:
-                        Circle().fill(Color.orange).frame(width: 8, height: 8)
-                        Text(L10n.t("Starting…"))
-                    case .ready(let port):
-                        let hosts = PhoneLinkNetwork.getHosts()
-                        let hasIP = hosts.first(where: { PhoneLinkNetwork.isPrivateIPv4($0) }) != nil
-                        if hasIP {
-                            Circle().fill(Color.green).frame(width: 8, height: 8)
-                            Text(L10n.t("Ready on \(hosts.first ?? ""):\(String(port))"))
-                        } else {
-                            Circle().fill(Color.orange).frame(width: 8, height: 8)
-                            Text(L10n.t("This Mac isn't on a local network"))
-                        }
-                    case .failed(let err):
-                        Circle().fill(Color.red).frame(width: 8, height: 8)
-                        Text(err)
-                    }
-                }
-                
-                Button(L10n.t("Connect a Phone…")) {
-                    if !preferences.phoneLinkEnabled {
-                        preferences.phoneLinkEnabled = true
-                    }
-                    PhoneLinkWindowController.shared.show(pairing: pairing, registry: registry, port: preferences.phoneLinkPort, serverStatus: serverStatus)
-                }
-                .buttonStyle(SettingsButtonStyle(kind: .prominent))
-                .controlSize(.large)
-            }
-            
-            Section(L10n.t("Paired phones")) {
-                if registry.discardedLegacyDevices {
-                    Text(L10n.t("Re-pair your phone after updating"))
-                        .foregroundColor(.orange)
-                }
-                if registry.devices.isEmpty {
-                    Text(L10n.t("No phones yet."))
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(registry.devices) { device in
-                        HStack {
-                            Image(systemName: device.platform == "ios" ? "iphone" : "smartphone")
-                                .font(.title2)
-                            VStack(alignment: .leading) {
-                                Text(device.name)
-                                Text(lastSeenText(for: device))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Button(L10n.t("Remove")) {
-                                deviceToRemove = device
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .alert(item: Binding<PairedDevice?>(
-            get: { deviceToRemove },
-            set: { deviceToRemove = $0 }
-        )) { device in
-            Alert(
-                title: Text(L10n.t("Remove “\(device.name)”?")),
-                message: Text(L10n.t("It will need to scan a new code to connect again.")),
-                primaryButton: .destructive(Text(L10n.t("Remove"))) {
-                    registry.remove(deviceId: device.deviceId)
-                },
-                secondaryButton: .cancel()
-            )
-        }
-    }
-}

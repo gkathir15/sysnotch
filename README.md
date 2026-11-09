@@ -192,6 +192,24 @@ make run                # generate, build, launch a Debug build
 make test               # unit tests
 ```
 
+The same steps are wrapped in plain shell scripts, which also detect the
+signing identity already in your keychain (Developer ID, then Apple
+Development, then ad-hoc) instead of relying on project.yml's maintainer
+team:
+
+```sh
+Scripts/build.sh            # Debug build
+Scripts/build.sh release    # Release build
+Scripts/run.sh              # build and launch a Debug copy
+Scripts/install.sh          # install a Release build to /Applications
+Scripts/dist.sh             # local .dmg in build/dist
+```
+
+Build output stays inside the project at `build/DerivedData`; `Scripts/dist.sh`
+produces an installable disk image that is not notarized, so only use it for
+builds you install yourself or hand to someone who will clear the quarantine
+flag.
+
 No signing identity is required for either. `make release` — which archives,
 notarizes, and produces a signed auto-update feed — needs a Developer ID
 certificate and an App Store Connect notary profile, and is only ever run by

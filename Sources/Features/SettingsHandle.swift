@@ -40,8 +40,6 @@ struct SettingsOrb: View {
     var returning: Bool = false
     /// With the notch folding away as it goes — see `GooArc.quick`.
     var quick: Bool = false
-    /// **A red dot**: a newer version is waiting — see `Updater.pending`.
-    var badge: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -240,17 +238,7 @@ struct SettingsOrb: View {
         }
         // A newer version waiting: a red dot on the middle of the arc, which
         // is the edge of the button too — there hovered or not.
-        .overlay {
-            if badge, !convex {
-                Circle()
-                    .fill(Palette.critical)
-                    .overlay(Circle().strokeBorder(Palette.notch, lineWidth: Self.badgeRing))
-                    .frame(width: Self.badgeSize, height: Self.badgeSize)
-                    .offset(badgeOffset(hovered: isHovered))
-                    .transition(.scale(scale: 0.3).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: badge)
+
         // Sized to the larger of the two states, and never clipped: the arc
         // may sit well outside this frame when it has stayed back on the
         // corner the button hangs from.

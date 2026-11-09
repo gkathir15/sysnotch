@@ -78,7 +78,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .english, .french, .german, .indonesian, .japanese, .korean,
              .brazilianPortuguese, .russian, .simplifiedChinese, .traditionalChinese,
              .ukrainian, .uzbek, .turkish:
-            return L10n.t("Codenotch uses this language even if the Mac does not.")
+            return L10n.t("Sys Notch uses this language even if the Mac does not.")
         }
     }
 }

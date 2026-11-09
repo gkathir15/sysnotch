@@ -114,7 +114,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = Self.icon()
-        item.button?.toolTip = L10n.t("Codenotch")
+        item.button?.toolTip = L10n.t("Sys Notch")
         // The pulse is a mask on the button's layer, and has to follow the
         // button's width as the item is laid out around a new image.
         item.button?.wantsLayer = true
@@ -223,7 +223,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             pulse.clear()
             item.length = NSStatusItem.squareLength
             button.image = Self.icon()
-            button.toolTip = L10n.t("Codenotch")
+            button.toolTip = L10n.t("Sys Notch")
             button.setAccessibilityLabel(nil)
             return
         }
@@ -361,11 +361,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(
             withTitle: L10n.t("Refresh all"), action: #selector(refreshAll), keyEquivalent: "r"
         ).target = self
-        if PhoneLink.isAvailable {
-            menu.addItem(
-                withTitle: L10n.t("Connect Phone…"), action: #selector(connectPhone), keyEquivalent: ""
-            ).target = self
-        }
         menu.addItem(
             withTitle: L10n.t("Activity…"), action: #selector(openActivity), keyEquivalent: ""
         ).target = self
@@ -374,7 +369,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         ).target = self
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: L10n.t("Quit Codenotch"), action: #selector(quit), keyEquivalent: "q"
+            withTitle: L10n.t("Quit Sys Notch"), action: #selector(quit), keyEquivalent: "q"
         ).target = self
     }
 
@@ -397,11 +392,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return image
     }
 
-@objc private func connectPhone() {
-        if let appDelegate = NSApp.delegate as? AppDelegate {
-            appDelegate.openConnectPhone()
-        }
-    }
 
     @objc private func openSettings() { onOpenSettings() }
     @objc private func openActivity() { Costs.showActivity() }

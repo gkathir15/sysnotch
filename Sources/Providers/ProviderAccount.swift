@@ -28,12 +28,12 @@ struct ProviderAccount: Equatable {
 
 /// Where to go when a provider has no usable credential.
 ///
-/// Codenotch cannot sign anyone in — it reads a credential the owning tool
+/// Sys Notch cannot sign anyone in — it reads a credential the owning tool
 /// holds — so the most it can honestly do is open that tool, or say what to do
 /// when there is nothing to open.
 enum SignInRoute: Equatable {
     /// The provider owns the session and can present its own sign-in window.
-    /// The only case where Codenotch genuinely signs anyone in or out.
+    /// The only case where Sys Notch genuinely signs anyone in or out.
     case modal(name: String)
     /// Launch the app that owns the credential.
     case openApp(bundleID: String, name: String)
@@ -89,7 +89,7 @@ enum SignInRoute: Equatable {
     var signOutCaveat: String {
         switch self {
         case .modal(let name):
-            return L10n.t("Signs out of \(name) — the session belongs to Codenotch.")
+            return L10n.t("Signs out of \(name) — the session belongs to Sys Notch.")
         case .openApp(_, let name):
             return L10n.t("You stay signed in to \(name) — end that session in \(name) itself.")
         case .guidance, .command:
@@ -162,7 +162,7 @@ struct ProviderSummary: Identifiable, Equatable {
     /// cure for an illness the provider does not have, and a button that does
     /// nothing is indistinguishable from a broken one.
     var wasRefusedAccess: Bool = false
-    /// Whether this provider's saved login has aged out and Codenotch could not
+    /// Whether this provider's saved login has aged out and Sys Notch could not
     /// renew it, so someone has to run the tool that owns it.
     ///
     /// Deliberately *not* read off the snapshot's status, for the same reason
