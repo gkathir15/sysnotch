@@ -984,7 +984,11 @@ actor EnergyProvider: UsageProvider {
     init() {}
 
     nonisolated func account() -> ProviderAccount? {
-        return ProviderAccount(label: "Power & Energy", plan: nil, source: "macOS", manageURL: nil)
+        let machine = MachineIdentity.current
+        let label = machine.isPortable
+            ? "\(machine.displayName) · Battery & Power"
+            : "\(machine.displayName) · Power"
+        return ProviderAccount(label: label, plan: nil, source: "macOS", manageURL: nil)
     }
 
     func signOut() async {}
@@ -1081,6 +1085,8 @@ actor EnergyProvider: UsageProvider {
            let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef] {
             for source in sources {
                 if let description = IOPSGetPowerSourceDescription(snapshot, source)?.takeUnretainedValue() as? [String: Any] {
+                    // A UPS is a power source but not a battery this Mac carries.
+                    guard description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
                     hasBattery = true
                     if let current = description[kIOPSCurrentCapacityKey] as? Int,
                        let maxCapacity = description[kIOPSMaxCapacityKey] as? Int, maxCapacity > 0 {
@@ -1149,7 +1155,7 @@ actor EnergyProvider: UsageProvider {
             batteryBand = .critical
         }
 
-        let primaryWindow = LimitWindow(
+        let batteryWindow = LimitWindow(
             id: "energy-status",
             label: L10n.t("Battery Level"),
             usedFraction: batteryLevel,
@@ -1170,19 +1176,31 @@ actor EnergyProvider: UsageProvider {
             usedText: isCharging ? L10n.t("Charging") : (hasBattery ? (isCharged ? L10n.t("Fully Charged") : L10n.t("Discharging")) : L10n.t("Connected"))
         )
 
-        var windows: [LimitWindow] = []
-
-        if let powerDraw {
-            windows.append(LimitWindow(
+        let drawWindow = powerDraw.map { draw in
+            LimitWindow(
                 id: "energy-draw",
                 label: L10n.t("Power Draw"),
-                usedFraction: min(max(powerDraw / peak, 0), 1),
-                usedText: Self.wattsText(powerDraw),
-                detail: "\(Self.wattsText(powerDraw)) " + L10n.t("of") + " \(Self.wattsText(peak)) — " + L10n.t("what this Mac can draw at full tilt")
-            ))
+                usedFraction: min(max(draw / peak, 0), 1),
+                usedText: Self.wattsText(draw),
+                detail: "\(Self.wattsText(draw)) " + L10n.t("of") + " \(Self.wattsText(peak)) — " + L10n.t("what this Mac can draw at full tilt")
+            )
         }
 
-        windows.append(contentsOf: [primaryWindow, powerSourceWindow, chargingWindow])
+        // A Mac without a battery has no battery row to show. It leads with
+        // live power draw instead, which is the reading its owner can act on.
+        var windows: [LimitWindow] = []
+        if hasBattery {
+            windows.append(batteryWindow)
+        } else if let drawWindow {
+            windows.append(drawWindow)
+        }
+        windows.append(powerSourceWindow)
+        if hasBattery {
+            windows.append(chargingWindow)
+        }
+        if hasBattery, let drawWindow {
+            windows.append(drawWindow)
+        }
 
         if let adapter {
             windows.append(LimitWindow(
@@ -1201,7 +1219,7 @@ actor EnergyProvider: UsageProvider {
             ))
         }
 
-        if let mins = timeRemainingMinutes {
+        if hasBattery, let mins = timeRemainingMinutes {
             let hrs = mins / 60
             let remMins = mins % 60
             let formattedTime = hrs > 0 ? "\(hrs)h \(remMins)m" : "\(remMins)m"
@@ -1214,6 +1232,15 @@ actor EnergyProvider: UsageProvider {
             windows.append(timeWindow)
         }
 
+        let headlineID: String
+        if hasBattery {
+            headlineID = "energy-status"
+        } else if powerDraw != nil {
+            headlineID = "energy-draw"
+        } else {
+            headlineID = "energy-source"
+        }
+
         return ProviderSnapshot(
             id: id,
             displayName: displayName,
@@ -1221,7 +1248,7 @@ actor EnergyProvider: UsageProvider {
             fidelity: .official,
             status: .ok,
             windows: windows,
-            headlineID: powerDraw == nil ? "energy-status" : "energy-draw"
+            headlineID: headlineID
         )
     }
 }

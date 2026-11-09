@@ -49,5 +49,32 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_companion-link._tcp</string>
+		<string>_workstation._tcp</string>
+		<string>_ssh._tcp</string>
+		<string>_smb._tcp</string>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+		<string>_ipp._tcp</string>
+		<string>_printer._tcp</string>
+		<string>_googlecast._tcp</string>
+		<string>_hap._tcp</string>
+		<string>_sonos._tcp</string>
+		<string>_device-info._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Sys Notch answers your phone on this network and scans it to name the devices beside your Mac.</string>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://hivinz.com/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>rmUfT5r49nR+3HdkbR5/YYLghfnAi6L49eOk3sIegSk=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

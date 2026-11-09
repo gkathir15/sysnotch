@@ -7,6 +7,8 @@ import Foundation
 enum LANDeviceKind: String, Codable, CaseIterable, Sendable {
     case router
     case computer
+    case laptop
+    case desktop
     case appleDevice
     case printer
     case scanner
@@ -20,7 +22,7 @@ enum LANDeviceKind: String, Codable, CaseIterable, Sendable {
     var rank: Int {
         switch self {
         case .router: return 0
-        case .computer: return 1
+        case .computer, .laptop, .desktop: return 1
         case .appleDevice: return 2
         case .printer, .scanner: return 3
         case .tv, .mediaPlayer: return 4
@@ -59,6 +61,12 @@ struct LANDevice: Identifiable, Codable, Hashable, Sendable {
     let hostname: String?
     let vendor: String?
     let kind: LANDeviceKind?
+    /// The Mac family the service or model string named, when it named one.
+    let machineFamily: MachineIdentity.Family?
+    /// A model identifier or advertised model string, when there is one.
+    let model: String?
+    /// Ports that accepted a short TCP connection during the scan.
+    let openPorts: [Int]
     let services: [String]
     let interface: String
     let isSelf: Bool
@@ -531,43 +539,77 @@ enum LANScan {
         let alive = ping(scanned)
         let neighbours = neighbourTable()
 
+        var bonjour: [String: BonjourService] = [:]
+        for service in BonjourScan.run() {
+            for address in service.addresses where bonjour[address] == nil {
+                bonjour[address] = service
+            }
+        }
+        let ssdp = SSDPScan.run()
+
         var candidates = alive
         candidates.formUnion(neighbours.keys)
+        candidates.formUnion(bonjour.keys)
+        candidates.formUnion(ssdp.keys)
         if let gateway = route.gateway { candidates.insert(gateway) }
         candidates.insert(chosen.address)
 
+        let openPorts = TCPProbe.scan(hosts: Array(candidates))
         let names = reverseNames(Array(candidates), deadline: 1.2)
         let network = addressValue(subnet)
         let maskValue = mask(width: prefix)
-        let selfAddresses = [chosen.address]
+        // A Mac with Wi-Fi and Ethernet on the same subnet has two addresses;
+        // both are this Mac, not a second machine that happens to run the same
+        // services.
+        let selfAddresses = all.map(\.address)
 
         var devices: [LANDevice] = []
         for address in candidates {
             guard let value = addressValue(address) else { continue }
             if let network, prefix < 32, (value & maskValue) != network { continue }
+            if selfAddresses.contains(address), address != chosen.address { continue }
             let neighbour = neighbours[address]
-            let hostname = names[address]
+            let advertised = bonjour[address]
+            let upnp = ssdp[address]
+            let hostname = names[address] ?? advertised?.hostName
             let isGateway = route.gateway == address
             let isSelf = selfAddresses.contains(address)
-            let vendor = neighbour.flatMap { vendor(mac: $0.mac) }
+            let ports = openPorts[address] ?? []
+            var vendor = neighbour.flatMap { vendor(mac: $0.mac) }
+            let machineFamily = advertised.flatMap {
+                MachineIdentity.Family.named($0.searchText)
+            } ?? (isSelf ? MachineIdentity.current.family : nil)
+            if vendor == nil, machineFamily != nil { vendor = "Apple" }
+
+            let services = Array(Set((advertised.map { [$0.type] } ?? []) + (upnp?.services ?? []))).sorted()
+            let haystack = [advertised?.searchText, upnp?.searchText, hostname, vendor,
+                            advertised?.model, TCPProbe.labels(for: ports).joined(separator: " ")]
+                .compactMap { $0?.lowercased() }
+                .joined(separator: " ")
             let kind: LANDeviceKind?
             if isGateway {
                 kind = .router
-            } else if isSelf {
+            } else if let machineFamily {
+                kind = machineFamily.isPortable ? .laptop : .desktop
+            } else if ports.contains(62078)
+                        || haystack.contains("iphone") || haystack.contains("ipad") {
+                kind = .appleDevice
+            } else if ports.contains(631) || ports.contains(9100)
+                        || haystack.contains("printer") {
+                kind = .printer
+            } else if ports.contains(8009) || haystack.contains("tv")
+                        || haystack.contains("television") || haystack.contains("mediarenderer") {
+                kind = .tv
+            } else if ports.contains(32400) || haystack.contains("plex") {
+                kind = .mediaPlayer
+            } else if haystack.contains("sonos") || haystack.contains("speaker") {
+                kind = .speaker
+            } else if haystack.contains("camera") || haystack.contains("doorbell") {
+                kind = .smartHome
+            } else if ports.contains(22) || ports.contains(445) || ports.contains(548) {
                 kind = .computer
             } else {
-                let haystack = [hostname, vendor].compactMap { $0?.lowercased() }.joined(separator: " ")
-                if haystack.contains("iphone") || haystack.contains("ipad") || haystack.contains("mac") {
-                    kind = .appleDevice
-                } else if haystack.contains("printer") {
-                    kind = .printer
-                } else if haystack.contains("tv") {
-                    kind = .tv
-                } else if haystack.contains("sonos") || haystack.contains("speaker") {
-                    kind = .speaker
-                } else {
-                    kind = nil
-                }
+                kind = nil
             }
 
             let fallbackName: String
@@ -581,14 +623,22 @@ enum LANScan {
                 fallbackName = "Device " + (address.split(separator: ".").last.map(String.init) ?? "")
             }
 
+            // Bonjour's friendly service name beats the machine-generated DNS
+            // name, which is often just the address with dashes in it.
+            let name = advertised?.name.isEmpty == false ? advertised!.name : (hostname ?? fallbackName)
+            let model = advertised?.model ?? (isSelf ? MachineIdentity.current.hardwareModel : nil)
+
             devices.append(LANDevice(
                 address: address,
                 mac: neighbour?.mac ?? "—",
-                name: hostname ?? fallbackName,
+                name: name,
                 hostname: hostname,
                 vendor: vendor,
                 kind: kind,
-                services: [],
+                machineFamily: machineFamily,
+                model: model,
+                openPorts: ports,
+                services: services,
                 interface: neighbour?.interface ?? chosen.name,
                 isSelf: isSelf,
                 isGateway: isGateway

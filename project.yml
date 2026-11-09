@@ -97,7 +97,20 @@ targets:
           NSExceptionDomains:
             "100.64.0.0/10":
               NSExceptionAllowsInsecureHTTPLoads: true
-        NSLocalNetworkUsageDescription: "Codenotch answers your phone on this network so it can show your usage."
+        NSLocalNetworkUsageDescription: "Sys Notch answers your phone on this network and scans it to name the devices beside your Mac."
+        NSBonjourServices:
+          - _companion-link._tcp
+          - _workstation._tcp
+          - _ssh._tcp
+          - _smb._tcp
+          - _airplay._tcp
+          - _raop._tcp
+          - _ipp._tcp
+          - _printer._tcp
+          - _googlecast._tcp
+          - _hap._tcp
+          - _sonos._tcp
+          - _device-info._tcp
         # --- Sparkle -------------------------------------------------------
         # Beside the download itself, on hivinz.com. It used to point at a
         # GitHub Pages URL for a repo that was never created, so every check
