@@ -88,14 +88,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         } else {
             let cells = cells()
             for snapshot in snapshots {
-                menu.addItem(headerItem(for: snapshot, now: now))
-                for line in Self.detailLines(for: snapshot, cells: cells, activity: activity,
-                                             now: now, format: resetTimeFormat) {
-                    let row = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-                    row.isEnabled = false
-                    row.indentationLevel = 1
-                    menu.addItem(row)
-                }
+                menu.addItem(providerItem(for: snapshot, cells: cells, now: now))
             }
         }
         menu.addItem(.separator())
@@ -145,8 +138,40 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func refreshAll() { onRefreshAll?() }
 
+    /// One metric in the menu: its heading stays on the menu, and its readings
+    /// live in a submenu that starts closed. Nine system providers with every
+    /// row expanded is a wall of text nobody reads; collapsed by default means
+    /// the menu is an index you can drill into, not a report you have to scroll.
+    /// A metric with no rows is the row itself, because there is nothing to
+    /// disclose.
+    private func providerItem(for snapshot: ProviderSnapshot, cells: [ProviderSnapshot],
+                              now: Date) -> NSMenuItem {
+        let header = headerItem(for: snapshot, now: now)
+        let lines = Self.detailLines(for: snapshot, cells: cells, activity: activity,
+                                     now: now, format: resetTimeFormat)
+        guard !lines.isEmpty else { return header }
+
+        let submenu = NSMenu(title: header.title)
+        for line in lines {
+            let row = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            row.isEnabled = false
+            submenu.addItem(row)
+        }
+        submenu.addItem(.separator())
+        let refresh = NSMenuItem(title: L10n.t("Refresh"),
+                                 action: #selector(refreshProvider(_:)), keyEquivalent: "")
+        refresh.target = self
+        refresh.representedObject = snapshot.id
+        submenu.addItem(refresh)
+
+        header.submenu = submenu
+        return header
+    }
+
     /// The provider's own row: name, headline figure, and age when stale — the
-    /// same three facts the tooltip header shows. Clicking re-reads it.
+    /// same three facts the tooltip header shows. Clicking re-reads it; when it
+    /// has readings the row opens its collapsed submenu instead, and Refresh
+    /// is the first item in there.
     private func headerItem(for snapshot: ProviderSnapshot, now: Date) -> NSMenuItem {
         var title = "\(snapshot.displayName) — \(Self.headline(for: snapshot))"
         if snapshot.kind == .usage, let since = snapshot.status.staleSince, since != .distantPast {

@@ -55,28 +55,19 @@ The installer is not code-signed, so the first time it runs SmartScreen says *Wi
 your PC*. Choose **More info**, then **Run anyway**. Every Windows change also leaves an
 installer on its [Windows Package run](../../actions/workflows/windows-package.yml).
 
-## Connect your phone
+## Dock on your phone
 
-The Codenotch phone app (iOS and Android) can show the same usage
-percentages, reset times and session states as the notch on your Mac.
-It reads only what the notch already displays — never tokens, credentials
-or raw API responses.
+The Android Dock dashboard can show the same system readings and the
+devices on this Mac's network. It connects directly to Sys Notch over a
+TCP socket on the local network.
 
-To pair, open **Settings › Phone › Connect a Phone…** (or the menu item)
-on your Mac. A QR code appears with a five-minute countdown; scan it with
-the Codenotch phone app, or copy the link and paste it into the app. The
-Mac and phone must be on the same Wi-Fi network — the server answers only
-local-network addresses and rejects anything routed over the internet.
+Open **Settings › Network** and turn on **Allow the Dock app on this
+network**. The pane shows the address and port (`8787`) to enter in Dock.
+The Mac and phone must be on the same Wi-Fi network.
 
-Each code is single-use and expires after five minutes. Reopening the
-window always mints a fresh one.
-
-To remove a paired phone, open **Settings › Phone**, find the device in
-the list and click **Remove**. Its credentials are deleted immediately and
-any subsequent request from that phone is rejected.
-
-See [docs/phone-link-protocol.md](docs/phone-link-protocol.md) for the
-wire-level details.
+The server binds only to loopback and private LAN addresses and sends
+nothing over the internet. It is unauthenticated and off by default, so
+leave it off on a shared or public network.
 
 ## What it reads
 

@@ -1478,8 +1478,12 @@ final class StatusMenuTests: XCTestCase {
         let titles = menu.items.map(\.title)
         XCTAssertTrue(titles[0].contains("Codex — 29%"), titles[0])
         XCTAssertTrue(titles[0].contains("20 hr 21 min ago"), titles[0])
-        XCTAssertTrue(titles[1].contains("Weekly limit"), titles[1])
-        XCTAssertTrue(titles[1].contains("29% Used · 71% left"), titles[1])
+        // Every metric starts collapsed: its readings are a submenu, not
+        // top-level rows, so nine providers do not become a wall of text.
+        XCTAssertFalse(titles.contains { $0.contains("Weekly limit") }, titles.joined(separator: "\n"))
+        let details = menu.items[0].submenu?.items.map(\.title) ?? []
+        XCTAssertTrue(details.contains { $0.contains("Weekly limit") }, details.joined(separator: "\n"))
+        XCTAssertTrue(details.contains { $0.contains("29% Used · 71% left") }, details.joined(separator: "\n"))
         XCTAssertTrue(titles.contains("Refresh all"))
         XCTAssertTrue(titles.contains("Settings…"))
         XCTAssertTrue(titles.contains("Quit Codenotch"))

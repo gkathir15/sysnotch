@@ -191,6 +191,13 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(asksProviderOnLook, forKey: Keys.asksProviderOnLook) }
     }
 
+    /// Whether the Dock dashboard may read these readings over the local
+    /// network. Off by default: the socket is unauthenticated, so exposing it
+    /// is a choice the owner makes, not something an update turns on for them.
+    @Published var mobileDashboardEnabled: Bool {
+        didSet { defaults.set(mobileDashboardEnabled, forKey: Keys.mobileDashboardEnabled) }
+    }
+
     /// Whether DeepSeek's current peak/off-peak billing phase is shown in its
     /// usage card. Enabled by default because the card's pricing rows are
     /// useful only when the rule is visible and understood.
@@ -363,6 +370,7 @@ final class Preferences: ObservableObject {
         static let display = "notchDisplay"
         static let resetTimeFormat = "resetTimeFormat"
         static let asksProviderOnLook = "asksProviderOnLook"
+        static let mobileDashboardEnabled = "mobileDashboardEnabled"
         static let scope = "notchScope"
         static let accentColor = "accentColor"
         // A new key, so there is nothing under the old app name to migrate.
@@ -571,6 +579,7 @@ final class Preferences: ObservableObject {
         // choice, and on a rate-limited provider it can cost freshness rather
         // than buy it.
         self.asksProviderOnLook = defaults.bool(forKey: Keys.asksProviderOnLook)
+        self.mobileDashboardEnabled = defaults.bool(forKey: Keys.mobileDashboardEnabled)
         self.deepSeekPricingEnabled = defaults.object(forKey: Keys.deepSeekPricingEnabled) as? Bool ?? true
         if let data = defaults.data(forKey: Keys.deepSeekPricingSchedule),
            let schedule = try? JSONDecoder().decode(DeepSeekPricing.Schedule.self, from: data) {

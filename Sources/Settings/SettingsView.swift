@@ -630,7 +630,7 @@ struct SettingsView: View {
     private func paneContent(for section: SettingsSection) -> some View {
         switch section {
         case .accounts:      accountsPane
-        case .network:       NetworkPage()
+        case .network:       NetworkPage(preferences: preferences)
         case .appearance:    appearancePane
         case .notifications: notificationsPane
         case .general:       generalPane

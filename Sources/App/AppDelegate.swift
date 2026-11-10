@@ -405,6 +405,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 .store(in: &cancellables)
             store.start()
+            MobileMetricsHub.shared.attach(store: store)
+            preferences.$mobileDashboardEnabled
+                .removeDuplicates()
+                .receive(on: RunLoop.main)
+                .sink { MobileMetricsHub.shared.setEnabled($0) }
+                .store(in: &cancellables)
+            MobileMetricsHub.shared.setEnabled(preferences.mobileDashboardEnabled)
             fleet.onRefresh = { [weak store] in store?.refreshNow(freshness: .fromSource) }
             fleet.onLook = { [weak store] in store?.refreshBecauseSomeoneIsLooking() }
             fleet.onRefreshProvider = { [weak store] id in
@@ -553,6 +560,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lmstudioMetrics?.stop()
         tokenRefresher?.stop()
         piResponseMonitor?.stop()
+        MobileMetricsHub.shared.shutdown()
         store?.stop()
         activityCoordinator?.stop()
         notchFleet?.stop()

@@ -40,27 +40,32 @@ final class StatusItemLocalRuntimeTests: XCTestCase {
         controller.activity = { fleet.menuModel.activity(for: $0) }
         let menu = NSMenu()
         controller.rebuild(menu: menu, now: Date())
-        let titles = menu.items.map(\.title)
+        let topTitles = menu.items.map(\.title)
+        // Metric readings live in a collapsed submenu; search the whole menu.
+        let titles = menu.items.flatMap { [$0.title] + ($0.submenu?.items.map(\.title) ?? []) }
         let joined = titles.joined(separator: "\n")
 
         let cell = try XCTUnwrap(fleet.menuModel.snapshots.first { $0.id == qwen })
-        XCTAssertTrue(titles.contains("LM Studio — 2 models loaded"), joined)
+        XCTAssertTrue(topTitles.contains("LM Studio — 2 models loaded"), joined)
         XCTAssertTrue(titles.contains("qwen3.8-27b: \(cell.headlineText) · Prompt · 1 queued · Context 61% · Today 20k in · 1200 out"), joined)
         XCTAssertTrue(titles.contains("flash-next-test: — tok/s"), joined)
-        XCTAssertTrue(titles.contains("Ollama — 1 model loaded"), joined)
+        XCTAssertTrue(topTitles.contains("Ollama — 1 model loaded"), joined)
         XCTAssertTrue(titles.contains("gemma4:e4b: \(expectedGigabytes(4.5)) · Thinking"), joined)
-        XCTAssertTrue(titles.contains { $0.hasPrefix("Claude — 73%") }, joined)
+        XCTAssertTrue(topTitles.contains { $0.hasPrefix("Claude — 73%") }, joined)
         // The runtime's row refreshes the runtime; a model's line is not a button.
         let header = try XCTUnwrap(menu.items.first { $0.title.hasPrefix("LM Studio") })
         XCTAssertEqual(header.representedObject as? String, "lmstudio")
         XCTAssertNotNil(header.action)
-        XCTAssertNil(try XCTUnwrap(menu.items.first { $0.title.hasPrefix("qwen3.8-27b") }).action)
+        let modelItem = try XCTUnwrap(menu.items.first { $0.title.hasPrefix("qwen3.8-27b") }
+            ?? menu.items.compactMap(\.submenu).flatMap(\.items).first { $0.title.hasPrefix("qwen3.8-27b") })
+        XCTAssertNil(modelItem.action)
 
         // A hidden model has no cell, so it has no line; the count still counts it.
         fleet.setSnapshots([cloud, ollama, runtime])
         fleet.menuModel.updateSnapshots(runtime.notchSnapshots.filter { $0.id == qwen } + [cloud])
         controller.rebuild(menu: menu, now: Date())
-        XCTAssertFalse(menu.items.map(\.title).contains { $0.hasPrefix("flash-next-test") })
+        let allTitles = menu.items.flatMap { [$0.title] + ($0.submenu?.items.map(\.title) ?? []) }
+        XCTAssertFalse(allTitles.contains { $0.hasPrefix("flash-next-test") })
     }
 
     func testAnEmptyOrUnreachableRuntimeSaysSoOnce() throws {
@@ -78,7 +83,8 @@ final class StatusItemLocalRuntimeTests: XCTestCase {
         controller.snapshots = [down]
         controller.rebuild(menu: menu, now: Date())
         XCTAssertEqual(menu.items.map(\.title).first, "LM Studio — —")
-        XCTAssertTrue(menu.items[1].title.contains("API token"), menu.items[1].title)
-        XCTAssertFalse(menu.items[1].isEnabled)
+        let detail = try XCTUnwrap(menu.items[0].submenu?.items.first)
+        XCTAssertTrue(detail.title.contains("API token"), detail.title)
+        XCTAssertFalse(detail.isEnabled)
     }
 }
